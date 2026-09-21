@@ -1,0 +1,235 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CANDIDATE
+  RECRUITER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  BANNED
+}
+
+enum JobStatus {
+  DRAFT
+  PENDING
+  PUBLISHED
+  CLOSED
+  REJECTED
+}
+
+enum ApplicationStatus {
+  APPLIED
+  REVIEWING
+  SHORTLISTED
+  INTERVIEWING
+  OFFERED
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+}
+
+model User {
+  id           Int        @id @default(autoincrement())
+  email        String     @unique @db.VarChar(191)
+  passwordHash String     @map("password_hash") @db.VarChar(255)
+  fullName     String     @map("full_name") @db.VarChar(150)
+  phone        String?    @db.VarChar(30)
+  role         UserRole   @default(CANDIDATE)
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+  candidate    Candidate?
+  recruiter    Recruiter?
+  auditLogs    AuditLog[]
+
+  @@map("users")
+}
+
+model Candidate {
+  id              Int              @id @default(autoincrement())
+  userId          Int              @unique @map("user_id")
+  headline        String?          @db.VarChar(180)
+  bio             String?          @db.Text
+  location        String?          @db.VarChar(150)
+  yearsExperience Decimal?         @map("years_experience") @db.Decimal(4, 1)
+  education       String?          @db.VarChar(255)
+  resumeUrl       String?          @map("resume_url") @db.VarChar(500)
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skills          CandidateSkill[]
+  applications    Application[]
+  recommendations Recommendation[]
+
+  @@map("candidates")
+}
+
+model Company {
+  id          Int         @id @default(autoincrement())
+  name        String      @db.VarChar(180)
+  description String?     @db.Text
+  website     String?     @db.VarChar(255)
+  logoUrl     String?     @map("logo_url") @db.VarChar(500)
+  address     String?     @db.VarChar(255)
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+  recruiters  Recruiter[]
+  jobs        Job[]
+
+  @@map("companies")
+}
+
+model Recruiter {
+  id        Int     @id @default(autoincrement())
+  userId    Int     @unique @map("user_id")
+  companyId Int     @map("company_id")
+  jobTitle  String? @map("job_title") @db.VarChar(120)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("recruiters")
+}
+
+model Skill {
+  id         Int              @id @default(autoincrement())
+  name       String           @unique @db.VarChar(100)
+  createdAt  DateTime         @default(now()) @map("created_at")
+  candidates CandidateSkill[]
+  jobs       JobSkill[]
+
+  @@map("skills")
+}
+
+model CandidateSkill {
+  candidateId Int       @map("candidate_id")
+  skillId     Int       @map("skill_id")
+  level       String?   @db.VarChar(50)
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  skill       Skill     @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([candidateId, skillId])
+  @@map("candidate_skills")
+}
+
+model Job {
+  id              Int              @id @default(autoincrement())
+  companyId       Int              @map("company_id")
+  title           String           @db.VarChar(180)
+  description     String           @db.Text
+  location        String?          @db.VarChar(150)
+  employmentType  String?          @map("employment_type") @db.VarChar(50)
+  minSalary       Decimal?         @map("min_salary") @db.Decimal(15, 2)
+  maxSalary       Decimal?         @map("max_salary") @db.Decimal(15, 2)
+  status          JobStatus        @default(DRAFT)
+  deadline        DateTime?
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  skills          JobSkill[]
+  applications    Application[]
+  matchScores     MatchScore[]
+  recommendations Recommendation[]
+
+  @@index([status, createdAt])
+  @@index([location])
+  @@map("jobs")
+}
+
+model JobSkill {
+  jobId      Int     @map("job_id")
+  skillId    Int     @map("skill_id")
+  isRequired Boolean @default(true) @map("is_required")
+  job        Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  skill      Skill   @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([jobId, skillId])
+  @@map("job_skills")
+}
+
+model Application {
+  id          Int                        @id @default(autoincrement())
+  candidateId Int                        @map("candidate_id")
+  jobId       Int                        @map("job_id")
+  coverLetter String?                    @map("cover_letter") @db.Text
+  status      ApplicationStatus          @default(APPLIED)
+  appliedAt   DateTime                   @default(now()) @map("applied_at")
+  updatedAt   DateTime                   @updatedAt @map("updated_at")
+  candidate   Candidate                  @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  job         Job                        @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  history     ApplicationStatusHistory[]
+  matchScore  MatchScore?
+
+  @@unique([candidateId, jobId])
+  @@index([jobId, status])
+  @@map("applications")
+}
+
+model ApplicationStatusHistory {
+  id            Int                @id @default(autoincrement())
+  applicationId Int                @map("application_id")
+  fromStatus    ApplicationStatus? @map("from_status")
+  toStatus      ApplicationStatus  @map("to_status")
+  note          String?            @db.Text
+  createdAt     DateTime           @default(now()) @map("created_at")
+  application   Application        @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, createdAt])
+  @@map("application_status_history")
+}
+
+model MatchScore {
+  id            Int         @id @default(autoincrement())
+  applicationId Int         @unique @map("application_id")
+  jobId         Int         @map("job_id")
+  score         Decimal     @db.Decimal(5, 2)
+  matchedSkills Json?       @map("matched_skills")
+  missingSkills Json?       @map("missing_skills")
+  explanation   String?     @db.Text
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  job           Job         @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId, score])
+  @@map("match_scores")
+}
+
+model Recommendation {
+  id          Int       @id @default(autoincrement())
+  candidateId Int       @map("candidate_id")
+  jobId       Int       @map("job_id")
+  score       Decimal   @db.Decimal(5, 2)
+  reason      String?   @db.Text
+  isViewed    Boolean   @default(false) @map("is_viewed")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  job         Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([candidateId, jobId])
+  @@index([candidateId, score])
+  @@map("recommendations")
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int?     @map("user_id")
+  action    String   @db.VarChar(100)
+  entity    String?  @db.VarChar(100)
+  entityId  Int?     @map("entity_id")
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@map("audit_logs")
+}
