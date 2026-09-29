@@ -6,6 +6,7 @@ const config = require('../config/env');
 const ApiError = require('../utils/apiError');
 const asyncHandler = require('../utils/asyncHandler');
 const validate = require('../middleware/validate');
+const { authenticate } = require('../middleware/auth');
 
 const registerSchema = z.object({
   body: z.object({
@@ -26,8 +27,26 @@ const loginSchema = z.object({
   query: z.object({})
 });
 
+const updateProfileSchema = z.object({
+  body: z.object({
+    fullName: z.string().min(2).max(150).optional(),
+    phone: z.string().max(30).nullable().optional()
+  }).refine((body) => Object.keys(body).length > 0, 'Cần có ít nhất một trường để cập nhật'),
+  params: z.object({}),
+  query: z.object({})
+});
+
+const changePasswordSchema = z.object({
+  body: z.object({
+    currentPassword: z.string().min(1),
+    newPassword: z.string().min(8)
+  }),
+  params: z.object({}),
+  query: z.object({})
+});
+
 function createToken(user) {
-  return jwt.sign({ userId: user.id, role: user.role }, config.jwtSecret, {
+  return jwt.sign({ userId: user.id, role: user.role, tokenVersion: user.tokenVersion }, config.jwtSecret, {
     expiresIn: config.jwtExpiresIn
   });
 }
@@ -77,6 +96,46 @@ router.post('/login', validate(loginSchema), asyncHandler(async (req, res) => {
   }
   if (user.status !== 'ACTIVE') throw new ApiError(403, 'Tài khoản không hoạt động');
   res.json({ success: true, data: { user: publicUser(user), token: createToken(user) } });
+}));
+
+router.get('/me', authenticate, asyncHandler(async (req, res) => {
+  const user = await prisma.user.findUnique({
+    where: { id: req.user.id },
+    select: {
+      id: true,
+      email: true,
+      fullName: true,
+      phone: true,
+      role: true,
+      status: true,
+      createdAt: true,
+      candidate: true,
+      recruiter: { include: { company: true } }
+    }
+  });
+  res.json({ success: true, data: user });
+}));
+
+router.patch('/me', authenticate, validate(updateProfileSchema), asyncHandler(async (req, res) => {
+  const user = await prisma.user.update({ where: { id: req.user.id }, data: req.body });
+  res.json({ success: true, data: publicUser(user) });
+}));
+
+router.patch('/me/password', authenticate, validate(changePasswordSchema), asyncHandler(async (req, res) => {
+  if (!(await bcrypt.compare(req.body.currentPassword, req.user.passwordHash))) {
+    throw new ApiError(400, 'Mật khẩu hiện tại không đúng');
+  }
+  const passwordHash = await bcrypt.hash(req.body.newPassword, 12);
+  await prisma.user.update({
+    where: { id: req.user.id },
+    data: { passwordHash, tokenVersion: { increment: 1 } }
+  });
+  res.json({ success: true, message: 'Đổi mật khẩu thành công, vui lòng đăng nhập lại' });
+}));
+
+router.post('/logout', authenticate, asyncHandler(async (req, res) => {
+  await prisma.user.update({ where: { id: req.user.id }, data: { tokenVersion: { increment: 1 } } });
+  res.json({ success: true, message: 'Đăng xuất thành công' });
 }));
 
 module.exports = router;

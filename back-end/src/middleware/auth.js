@@ -14,7 +14,7 @@ async function authenticate(req, res, next) {
   try {
     const payload = jwt.verify(token, config.jwtSecret);
     const user = await prisma.user.findUnique({ where: { id: payload.userId } });
-    if (!user || user.status !== 'ACTIVE') {
+    if (!user || user.status !== 'ACTIVE' || user.tokenVersion !== (payload.tokenVersion || 0)) {
       return next(new ApiError(401, 'Tài khoản không hợp lệ hoặc đã bị khóa'));
     }
     req.user = user;
