@@ -6,7 +6,10 @@ const validate = require('../middleware/validate');
 const { authenticate, authorize } = require('../middleware/auth');
 
 const applySchema = z.object({
-  body: z.object({ coverLetter: z.string().max(5000).optional() }),
+  body: z.object({
+    coverLetter: z.string().max(5000).optional(),
+    resumeId: z.coerce.number().int().positive().optional()
+  }),
   params: z.object({ jobId: z.coerce.number().int().positive() }),
   query: z.object({})
 });
@@ -46,14 +49,37 @@ router.post('/jobs/:jobId', authenticate, authorize('CANDIDATE'), validate(apply
   if (!job || job.status !== 'PUBLISHED') throw new ApiError(404, 'Việc làm không tồn tại hoặc chưa được đăng');
   const existing = await prisma.application.findUnique({ where: { candidateId_jobId: { candidateId: candidate.id, jobId: job.id } } });
   if (existing) throw new ApiError(409, 'Bạn đã ứng tuyển vào việc làm này');
-  const application = await prisma.application.create({
-    data: {
-      candidateId: candidate.id,
-      jobId: job.id,
-      coverLetter: req.body.coverLetter,
-      history: { create: { toStatus: 'APPLIED' } }
-    },
-    include: { job: true, history: true }
+  let resumePathSnapshot;
+  if (req.body.resumeId) {
+    const resume = await prisma.candidateResume.findFirst({ where: { id: req.body.resumeId, candidateId: candidate.id } });
+    if (!resume) throw new ApiError(400, 'CV không thuộc về ứng viên');
+    resumePathSnapshot = resume.path;
+  }
+  const application = await prisma.$transaction(async (transaction) => {
+    const result = await transaction.application.create({
+      data: {
+        candidateId: candidate.id,
+        jobId: job.id,
+        coverLetter: req.body.coverLetter,
+        resumeId: req.body.resumeId,
+        resumePathSnapshot,
+        history: { create: { toStatus: 'APPLIED' } }
+      },
+      include: { job: true, resume: true, history: true }
+    });
+    const recruiters = await transaction.recruiter.findMany({ where: { companyId: job.companyId }, select: { userId: true } });
+    if (recruiters.length) {
+      await transaction.notification.createMany({
+        data: recruiters.map(({ userId }) => ({
+          userId,
+          type: 'NEW_APPLICATION',
+          title: 'Có đơn ứng tuyển mới',
+          content: `Có ứng viên mới ứng tuyển vào vị trí ${job.title}.`,
+          link: `/recruiter/applications/${result.id}`
+        }))
+      });
+    }
+    return result;
   });
   res.status(201).json({ success: true, data: application });
 }));
@@ -61,7 +87,7 @@ router.post('/jobs/:jobId', authenticate, authorize('CANDIDATE'), validate(apply
 router.get('/me', authenticate, authorize('CANDIDATE'), asyncHandler(async (req, res) => {
   const candidate = await prisma.candidate.findUnique({ where: { userId: req.user.id } });
   if (!candidate) throw new ApiError(404, 'Không tìm thấy hồ sơ ứng viên');
-  const applications = await prisma.application.findMany({ where: { candidateId: candidate.id }, include: { job: { include: { company: true } }, history: { orderBy: { createdAt: 'asc' } }, matchScore: true }, orderBy: { appliedAt: 'desc' } });
+  const applications = await prisma.application.findMany({ where: { candidateId: candidate.id }, include: { job: { include: { company: true } }, resume: true, history: { orderBy: { createdAt: 'asc' } }, matchScore: true }, orderBy: { appliedAt: 'desc' } });
   res.json({ success: true, data: applications });
 }));
 
@@ -77,7 +103,7 @@ router.get('/managed', authenticate, authorize('RECRUITER'), validate(recruiterL
   const [items, total] = await prisma.$transaction([
     prisma.application.findMany({
       where,
-      include: { candidate: { include: { user: { select: { id: true, email: true, fullName: true, phone: true } }, skills: { include: { skill: true } } } }, job: true, history: { orderBy: { createdAt: 'asc' } }, matchScore: true },
+      include: { candidate: { include: { user: { select: { id: true, fullName: true } }, skills: { include: { skill: true } } } }, resume: true, job: true, history: { orderBy: { createdAt: 'asc' } }, matchScore: true },
       orderBy: { appliedAt: 'desc' },
       skip: (page - 1) * limit,
       take: limit
@@ -90,7 +116,7 @@ router.get('/managed', authenticate, authorize('RECRUITER'), validate(recruiterL
 router.get('/:id', authenticate, validate(idSchema), asyncHandler(async (req, res) => {
   const application = await prisma.application.findUnique({
     where: { id: req.params.id },
-    include: { candidate: { include: { user: { select: { id: true, email: true, fullName: true, phone: true } }, skills: { include: { skill: true } } } }, job: { include: { company: true } }, history: { orderBy: { createdAt: 'asc' } }, matchScore: true }
+    include: { candidate: { include: { user: { select: { id: true, fullName: true } }, skills: { include: { skill: true } } } }, resume: true, job: { include: { company: true } }, history: { orderBy: { createdAt: 'asc' } }, matchScore: true }
   });
   if (!application) throw new ApiError(404, 'Không tìm thấy hồ sơ ứng tuyển');
   const isCandidate = req.user.role === 'CANDIDATE' && application.candidate.userId === req.user.id;
@@ -125,6 +151,18 @@ router.patch('/:id/status', authenticate, authorize('RECRUITER'), validate(statu
   const updated = await prisma.$transaction(async (transaction) => {
     const result = await transaction.application.update({ where: { id: application.id }, data: { status: req.body.status } });
     await transaction.applicationStatusHistory.create({ data: { applicationId: application.id, fromStatus: application.status, toStatus: req.body.status, note: req.body.note } });
+    const candidate = await transaction.candidate.findUnique({ where: { id: application.candidateId }, select: { userId: true } });
+    if (candidate) {
+      await transaction.notification.create({
+        data: {
+          userId: candidate.userId,
+          type: 'APPLICATION_STATUS_CHANGED',
+          title: 'Đơn ứng tuyển được cập nhật',
+          content: `Đơn ứng tuyển vị trí ${application.job.title} đã chuyển sang trạng thái ${req.body.status}.`,
+          link: `/applications`
+        }
+      });
+    }
     return result;
   });
   res.json({ success: true, data: updated });

@@ -27,6 +27,15 @@ enum JobStatus {
   REJECTED
 }
 
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  INTERNSHIP
+  CONTRACT
+  REMOTE
+  HYBRID
+}
+
 enum ApplicationStatus {
   APPLIED
   REVIEWING
@@ -39,38 +48,52 @@ enum ApplicationStatus {
 }
 
 model User {
-  id           Int        @id @default(autoincrement())
-  email        String     @unique @db.VarChar(191)
-  passwordHash String     @map("password_hash") @db.VarChar(255)
-  fullName     String     @map("full_name") @db.VarChar(150)
-  phone        String?    @db.VarChar(30)
-  role         UserRole   @default(CANDIDATE)
-  status       UserStatus @default(ACTIVE)
-  tokenVersion Int        @default(0) @map("token_version")
-  createdAt    DateTime   @default(now()) @map("created_at")
-  updatedAt    DateTime   @updatedAt @map("updated_at")
-  candidate    Candidate?
-  recruiter    Recruiter?
-  auditLogs    AuditLog[]
+  id                  Int                  @id @default(autoincrement())
+  email               String               @unique @db.VarChar(191)
+  passwordHash        String               @map("password_hash") @db.VarChar(255)
+  fullName            String               @map("full_name") @db.VarChar(150)
+  phone               String?              @db.VarChar(30)
+  role                UserRole             @default(CANDIDATE)
+  status              UserStatus           @default(ACTIVE)
+  tokenVersion        Int                  @default(0) @map("token_version")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+  candidate           Candidate?
+  recruiter           Recruiter?
+  auditLogs           AuditLog[]
+  notifications       Notification[]
+  passwordResetTokens PasswordResetToken[]
+  refreshTokens       RefreshToken[]
 
   @@map("users")
 }
 
 model Candidate {
-  id              Int              @id @default(autoincrement())
-  userId          Int              @unique @map("user_id")
-  headline        String?          @db.VarChar(180)
-  bio             String?          @db.Text
-  location        String?          @db.VarChar(150)
-  yearsExperience Decimal?         @map("years_experience") @db.Decimal(4, 1)
-  education       String?          @db.VarChar(255)
-  resumeUrl       String?          @map("resume_url") @db.VarChar(500)
-  createdAt       DateTime         @default(now()) @map("created_at")
-  updatedAt       DateTime         @updatedAt @map("updated_at")
-  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  skills          CandidateSkill[]
-  applications    Application[]
-  recommendations Recommendation[]
+  id                    Int                   @id @default(autoincrement())
+  userId                Int                   @unique @map("user_id")
+  headline              String?               @db.VarChar(180)
+  bio                   String?               @db.Text
+  location              String?               @db.VarChar(150)
+  yearsExperience       Decimal?              @map("years_experience") @db.Decimal(4, 1)
+  education             String?               @db.VarChar(255)
+  resumeUrl             String?               @map("resume_url") @db.VarChar(500)
+  desiredPosition       String?               @map("desired_position") @db.VarChar(180)
+  desiredSalary         Decimal?              @map("desired_salary") @db.Decimal(15, 2)
+  desiredLocation       String?               @map("desired_location") @db.VarChar(150)
+  desiredEmploymentType EmploymentType?       @map("desired_employment_type")
+  isSearchable          Boolean               @default(true) @map("is_searchable")
+  createdAt             DateTime              @default(now()) @map("created_at")
+  updatedAt             DateTime              @updatedAt @map("updated_at")
+  user                  User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skills                CandidateSkill[]
+  applications          Application[]
+  recommendations       Recommendation[]
+  educations            CandidateEducation[]
+  experiences           CandidateExperience[]
+  projects              CandidateProject[]
+  resumes               CandidateResume[]
+  savedJobs             SavedJob[]
+  matchScores           MatchScore[]
 
   @@map("candidates")
 }
@@ -128,21 +151,26 @@ model Job {
   title           String           @db.VarChar(180)
   description     String           @db.Text
   location        String?          @db.VarChar(150)
-  employmentType  String?          @map("employment_type") @db.VarChar(50)
+  employmentType  EmploymentType?  @map("employment_type")
   minSalary       Decimal?         @map("min_salary") @db.Decimal(15, 2)
   maxSalary       Decimal?         @map("max_salary") @db.Decimal(15, 2)
   status          JobStatus        @default(DRAFT)
+  moderationNote  String?          @map("moderation_note") @db.Text
   deadline        DateTime?
   createdAt       DateTime         @default(now()) @map("created_at")
   updatedAt       DateTime         @updatedAt @map("updated_at")
   company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   skills          JobSkill[]
   applications    Application[]
+  savedBy         SavedJob[]
   matchScores     MatchScore[]
   recommendations Recommendation[]
 
-  @@index([status, createdAt])
+  @@index([status])
+  @@index([createdAt])
   @@index([location])
+  @@index([deadline])
+  @@index([employmentType])
   @@map("jobs")
 }
 
@@ -158,21 +186,138 @@ model JobSkill {
 }
 
 model Application {
-  id          Int                        @id @default(autoincrement())
-  candidateId Int                        @map("candidate_id")
-  jobId       Int                        @map("job_id")
-  coverLetter String?                    @map("cover_letter") @db.Text
-  status      ApplicationStatus          @default(APPLIED)
-  appliedAt   DateTime                   @default(now()) @map("applied_at")
-  updatedAt   DateTime                   @updatedAt @map("updated_at")
-  candidate   Candidate                  @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  job         Job                        @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  history     ApplicationStatusHistory[]
-  matchScore  MatchScore?
+  id                 Int                        @id @default(autoincrement())
+  candidateId        Int                        @map("candidate_id")
+  jobId              Int                        @map("job_id")
+  resumeId           Int?                       @map("resume_id")
+  resumePathSnapshot String?                    @map("resume_path_snapshot") @db.VarChar(500)
+  coverLetter        String?                    @map("cover_letter") @db.Text
+  status             ApplicationStatus          @default(APPLIED)
+  appliedAt          DateTime                   @default(now()) @map("applied_at")
+  updatedAt          DateTime                   @updatedAt @map("updated_at")
+  candidate          Candidate                  @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  job                Job                        @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  resume             CandidateResume?           @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+  history            ApplicationStatusHistory[]
+  matchScore         MatchScore?
 
   @@unique([candidateId, jobId])
   @@index([jobId, status])
   @@map("applications")
+}
+
+model CandidateEducation {
+  id          Int       @id @default(autoincrement())
+  candidateId Int       @map("candidate_id")
+  school      String    @db.VarChar(255)
+  major       String?   @db.VarChar(180)
+  degree      String?   @db.VarChar(120)
+  fromDate    DateTime? @map("from_date")
+  toDate      DateTime? @map("to_date")
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([candidateId])
+  @@map("candidate_educations")
+}
+
+model CandidateExperience {
+  id          Int       @id @default(autoincrement())
+  candidateId Int       @map("candidate_id")
+  company     String    @db.VarChar(180)
+  title       String    @db.VarChar(180)
+  description String?   @db.Text
+  fromDate    DateTime? @map("from_date")
+  toDate      DateTime? @map("to_date")
+  isCurrent   Boolean   @default(false) @map("is_current")
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([candidateId])
+  @@map("candidate_experiences")
+}
+
+model CandidateProject {
+  id           Int       @id @default(autoincrement())
+  candidateId  Int       @map("candidate_id")
+  name         String    @db.VarChar(180)
+  description  String?   @db.Text
+  link         String?   @db.VarChar(500)
+  technologies Json?
+  candidate    Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([candidateId])
+  @@map("candidate_projects")
+}
+
+model CandidateResume {
+  id           Int           @id @default(autoincrement())
+  candidateId  Int           @map("candidate_id")
+  fileName     String        @map("file_name") @db.VarChar(255)
+  path         String        @db.VarChar(500)
+  mimeType     String        @map("mime_type") @db.VarChar(100)
+  size         Int
+  isDefault    Boolean       @default(false) @map("is_default")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+  candidate    Candidate     @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  applications Application[]
+
+  @@index([candidateId, isDefault])
+  @@map("candidate_resumes")
+}
+
+model SavedJob {
+  candidateId Int       @map("candidate_id")
+  jobId       Int       @map("job_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  job         Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@id([candidateId, jobId])
+  @@index([jobId])
+  @@map("saved_jobs")
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  type      String   @db.VarChar(80)
+  title     String   @db.VarChar(180)
+  content   String   @db.Text
+  link      String?  @db.VarChar(500)
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt])
+  @@map("notifications")
+}
+
+model PasswordResetToken {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
+  tokenHash String    @unique @map("token_hash") @db.VarChar(255)
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt, usedAt])
+  @@map("password_reset_tokens")
+}
+
+model RefreshToken {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
+  tokenHash String    @unique @map("token_hash") @db.VarChar(255)
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt, revokedAt])
+  @@map("refresh_tokens")
 }
 
 model ApplicationStatusHistory {
@@ -189,18 +334,29 @@ model ApplicationStatusHistory {
 }
 
 model MatchScore {
-  id            Int         @id @default(autoincrement())
-  applicationId Int         @unique @map("application_id")
-  jobId         Int         @map("job_id")
-  score         Decimal     @db.Decimal(5, 2)
-  matchedSkills Json?       @map("matched_skills")
-  missingSkills Json?       @map("missing_skills")
-  explanation   String?     @db.Text
-  createdAt     DateTime    @default(now()) @map("created_at")
-  updatedAt     DateTime    @updatedAt @map("updated_at")
-  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  job           Job         @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  id               Int          @id @default(autoincrement())
+  candidateId      Int          @map("candidate_id")
+  jobId            Int          @map("job_id")
+  applicationId    Int?         @unique @map("application_id")
+  score            Decimal      @db.Decimal(5, 2)
+  skillScore       Decimal      @map("skill_score") @db.Decimal(5, 2)
+  experienceScore  Decimal      @map("experience_score") @db.Decimal(5, 2)
+  positionScore    Decimal      @map("position_score") @db.Decimal(5, 2)
+  locationScore    Decimal      @map("location_score") @db.Decimal(5, 2)
+  salaryScore      Decimal      @map("salary_score") @db.Decimal(5, 2)
+  employmentScore  Decimal      @map("employment_score") @db.Decimal(5, 2)
+  matchedSkills    Json?        @map("matched_skills")
+  missingSkills    Json?        @map("missing_skills")
+  explanation      String?      @db.Text
+  computedAt       DateTime     @map("computed_at")
+  algorithmVersion String       @map("algorithm_version") @db.VarChar(50)
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+  candidate        Candidate    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  job              Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  application      Application? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
+  @@unique([candidateId, jobId])
   @@index([jobId, score])
   @@map("match_scores")
 }
