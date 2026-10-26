@@ -12,11 +12,14 @@ const jobsRoutes = require('./routes/jobs.routes');
 const applicationsRoutes = require('./routes/applications.routes');
 const candidatesRoutes = require('./routes/candidates.routes');
 const adminRoutes = require('./routes/admin.routes');
+const notificationsRoutes = require('./routes/notifications.routes');
+const recruitersRoutes = require('./routes/recruiters.routes');
+const recommendationsRoutes = require('./routes/recommendations.routes');
 
 const app = express();
 
 app.use(helmet());
-app.use(cors({ origin: config.corsOrigin }));
+app.use(cors({ origin: config.corsOrigins, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
 app.use(morgan('dev'));
 app.use('/assets', express.static(path.join(__dirname, '../public')));
@@ -31,6 +34,10 @@ app.use('/api/jobs', jobsRoutes);
 app.use('/api/applications', applicationsRoutes);
 app.use('/api/candidates', candidatesRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/notifications', notificationsRoutes);
+app.use('/api/recruiters', recruitersRoutes);
+app.use('/api/recommendations', recommendationsRoutes);
+app.use('/api/ai', recommendationsRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
