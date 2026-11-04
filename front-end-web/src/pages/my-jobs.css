@@ -1,0 +1,26 @@
+.my-jobs-page { max-width: 1000px; margin: 0 auto; padding: 48px 24px; }
+.my-jobs-page .ui-tabs { margin: 24px 0; }
+.my-jobs-list { display: grid; gap: 16px; }
+.my-job-card { padding: 22px; border: 1px solid var(--color-border); border-radius: 16px; background: var(--color-surface); box-shadow: var(--shadow-sm); }
+.my-job-summary { display: flex; align-items: center; gap: 16px; }
+.my-job-summary h2 { margin: 0 0 6px; font-size: 1.15rem; }
+.my-job-summary p { margin: 0 0 5px; color: var(--color-muted); }
+.my-job-summary small, .my-job-card > small { color: var(--color-muted); }
+.my-job-actions { display: flex; align-items: center; gap: 14px; margin-top: 18px; }
+.application-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.application-timeline { display: grid; gap: 14px; margin: 18px 0; padding-left: 8px; }
+.timeline-item { display: flex; gap: 12px; }
+.timeline-item i { width: 9px; height: 9px; flex: 0 0 auto; margin-top: 6px; border-radius: 50%; background: var(--color-primary); }
+.timeline-item strong, .timeline-item small { display: block; }
+.timeline-item small { margin-top: 3px; color: var(--color-muted); }
+.timeline-item p { margin: 5px 0 0; color: var(--color-muted); }
+.danger-link { border: 0; padding: 0; background: none; color: #b42318; cursor: pointer; font: inherit; }
+@media (max-width: 600px) {
+  .my-jobs-page { padding-inline: 14px; }
+  .application-card-heading { display: grid; }
+  .my-job-summary { align-items: flex-start; min-width: 0; }
+  .my-job-summary > div:last-child { min-width: 0; }
+  .my-job-summary h2, .my-job-summary p { overflow-wrap: anywhere; }
+  .my-job-actions { align-items: stretch; flex-direction: column; }
+  .my-job-actions > * { box-sizing: border-box; min-height: 44px; text-align: center; width: 100%; }
+}

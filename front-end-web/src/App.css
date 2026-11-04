@@ -1,4 +1,11 @@
+@import './styles/tokens.css';
+@import './components/ui/ui.css';
 @import './auth.css';
 @import './admin.css';
 @import './board.css';
 @import './candidate.css';
+
+.route-error { min-height: calc(100vh - 64px); display: grid; place-content: center; justify-items: center; padding: 32px 20px; color: var(--color-ink); text-align: center; }
+.route-error h1 { margin-bottom: 8px; }
+.route-error p { max-width: 520px; color: var(--color-muted); }
+.route-error button { min-height: 44px; border: 0; border-radius: var(--radius-sm); padding: 0 18px; color: #fff; background: var(--color-primary); font-weight: 700; }

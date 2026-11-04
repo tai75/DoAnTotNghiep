@@ -1,7 +1,17 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { authApi, setAccessToken, setUnauthorizedHandler } from '../services/api'
+import { AuthContext } from './auth'
 
-const AuthContext = createContext(null)
+let restoreSessionPromise = null
+
+function restoreSession() {
+  if (!restoreSessionPromise) {
+    restoreSessionPromise = authApi.refresh().finally(() => {
+      restoreSessionPromise = null
+    })
+  }
+  return restoreSessionPromise
+}
 
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null)
@@ -13,16 +23,25 @@ export function AuthProvider({ children }) {
   }, [])
 
   useEffect(() => {
+    let active = true
     setUnauthorizedHandler(clearSession)
-    authApi.refresh()
+    restoreSession()
       .then(({ user, token }) => {
+        if (!active) return
         setAccessToken(token)
-        return authApi.me().then((currentUser) => setSession({ user: currentUser }))
+        setSession({ user })
       })
-      .catch(() => clearSession())
-      .finally(() => setIsLoading(false))
+      .catch(() => {
+        if (active) clearSession()
+      })
+      .finally(() => {
+        if (active) setIsLoading(false)
+      })
 
-    return () => setUnauthorizedHandler(null)
+    return () => {
+      active = false
+      setUnauthorizedHandler(null)
+    }
   }, [clearSession])
 
   const login = useCallback(async (payload, isRegister = false) => {
@@ -49,10 +68,4 @@ export function AuthProvider({ children }) {
   }), [session, isLoading, login, logout])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
-}
-
-export function useAuth() {
-  const context = useContext(AuthContext)
-  if (!context) throw new Error('useAuth must be used within AuthProvider')
-  return context
 }

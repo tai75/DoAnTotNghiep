@@ -2,9 +2,11 @@
 
 ## 1. Mục tiêu và phạm vi
 
-Tài liệu này mô tả schema lưu kết quả matching, công thức điểm có trọng số và
-luồng cập nhật/cache. Giai đoạn này chỉ chuẩn hóa dữ liệu và đặc tả; chưa triển
-khai model AI hay endpoint.
+Tài liệu này mô tả schema lưu kết quả matching, công thức điểm có trọng số,
+luồng cập nhật/cache và chính sách version hiện hành. Matching V1 đã được triển
+khai và là phiên bản ổn định mặc định; điểm V1 hoạt động độc lập với Gemini.
+V2 legacy và V3 không được phép phục vụ staging user traffic khi chưa vượt qua
+các safety gate tương ứng.
 
 Kết quả là một bản ghi cho mỗi cặp `(candidateId, jobId)`. Bản ghi không phụ
 thuộc việc ứng viên đã nộp đơn hay chưa, vì matching được dùng cả cho tìm kiếm,
@@ -156,6 +158,56 @@ khớp theo chính enum, không tự động coi là tương đương.
 
 ## 4. Luồng tính, làm mới và cache
 
+### 4.3. Weighted-v2 và đánh giá
+
+`weighted-v2` là thiết kế legacy bổ sung semantic similarity giữa văn bản hồ sơ và mô tả việc làm.
+Kết quả v2 được lưu riêng trong `MatchScoreV2`, vì vậy kết quả
+`weighted-v1` không bị ghi đè.
+
+V2 hiện bị feature-gate ở frontend, backend route và service; endpoint candidate trả HTTP 410.
+Không bật V2 trên staging vì model `text-embedding-004` đã ngừng hoạt động, không thay model trực
+tiếp trong V2 và không trộn cache/vector của V2 với version khác. Các trọng số dưới đây được giữ
+lại để mô tả contract legacy, không phải cấu hình được phép bật.
+
+Trọng số mặc định của v2, tổng bằng `1.0`, là:
+
+| Thành phần | Trọng số |
+|---|---:|
+| Kỹ năng | 0.40 |
+| Kinh nghiệm | 0.15 |
+| Vị trí | 0.10 |
+| Địa điểm | 0.05 |
+| Lương | 0.05 |
+| Hình thức | 0.05 |
+| Semantic similarity | 0.20 |
+
+Contract legacy hỗ trợ `MATCHING_V2_WEIGHTS` dạng JSON và từ chối trọng số âm hoặc tổng khác
+`1.0`; không thay đổi weights hoặc score semantics trong release hiện tại. Nội dung CV/job không
+được ghi vào log.
+
+Source của `GET /api/jobs/:id/match/v2` được giữ để audit nhưng không phải endpoint staging khả dụng.
+
+V3 dùng embedding contract và cache identity riêng. V3 chỉ được xem xét cho shadow/evaluation sau
+provider contract smoke an toàn; chỉ được phục vụ user traffic sau khi có dataset human ground truth,
+đánh giá độc lập, privacy review và rollback evidence. Fallback về V1 không được báo là V3 PASS.
+
+Dataset mẫu tại `back-end/data/matching-eval.csv` chưa được phê duyệt để đưa vào release và chưa
+đủ human ground truth. Chỉ chạy evaluation sau khi thay bằng ID/nhãn có provenance, được đánh giá
+độc lập và sử dụng database test phù hợp:
+
+```bash
+cd back-end
+node scripts/evaluate-matching.js
+```
+
+Script in `precision@3`, `precision@5` và `MRR` cho v1/v2. Không dùng kết quả từ dataset chưa
+xác minh để tuyên bố chất lượng hoặc bật V2/V3. Kết quả chính thức cần ghi vào bảng sau:
+
+| Version | precision@3 | precision@5 | MRR |
+|---|---:|---:|---:|
+| weighted-v1 | TBD | TBD | TBD |
+| weighted-v2 | TBD | TBD | TBD |
+
 ### 4.1. Khi tính
 
 Có ba điểm kích hoạt:
@@ -220,6 +272,9 @@ Endpoint recruiter là
 `requiredSkillIds`, `minExperience`, `location` cho phép điều chỉnh tiêu chí.
 Endpoint này chỉ nhận job thuộc company của recruiter, chỉ trả candidate
 searchable hoặc đã ứng tuyển, và chỉ trả email/điện thoại khi đã ứng tuyển.
+
+V1 là phiên bản ổn định mặc định cho staging candidate. V2 legacy và V3 phải giữ disabled cho
+user traffic; trạng thái này không đồng nghĩa toàn bộ staging release đã GO.
 
 Lớp LLM dùng Gemini tùy chọn qua `GEMINI_API_KEY`. Gemini chỉ được gọi để tạo
 giải thích ngắn hoặc gọi các tool đọc dữ liệu thật trong `POST /api/ai/chat`.

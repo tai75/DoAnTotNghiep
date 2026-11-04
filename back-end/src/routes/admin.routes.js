@@ -38,6 +38,21 @@ const moderationSchema = z.object({
   query: z.object({})
 });
 
+const reviewListSchema = z.object({
+  body: z.object({}),
+  params: z.object({}),
+  query: z.object({ status: z.enum(['PENDING', 'APPROVED', 'REJECTED']).default('PENDING') })
+});
+
+const reviewModerationSchema = z.object({
+  body: z.object({
+    status: z.enum(['APPROVED', 'REJECTED']),
+    note: z.string().trim().max(2000).optional()
+  }),
+  params: z.object({ id: z.coerce.number().int().positive() }),
+  query: z.object({})
+});
+
 const jobListSchema = z.object({
   body: z.object({}),
   params: z.object({}),
@@ -175,6 +190,7 @@ router.patch('/users/:id/status', validate(userStatusSchema), asyncHandler(async
     await transaction.auditLog.create({
       data: { userId: req.user.id, action: 'USER_STATUS_UPDATED', entity: 'User', entityId: user.id, metadata: { fromStatus: user.status, toStatus: req.body.status } }
     });
+    await transaction.refreshToken.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: new Date() } });
     return result;
   });
   res.json({ success: true, data: updated });
@@ -235,12 +251,35 @@ router.patch('/jobs/:id/moderation', validate(moderationSchema), asyncHandler(as
         }))
       });
     }
+    if (req.body.status === 'PUBLISHED' && job.status !== 'PUBLISHED') {
+      const followers = await transaction.companyFollow.findMany({ where: { companyId: job.companyId }, select: { candidate: { select: { userId: true } } } });
+      if (followers.length) await transaction.notification.createMany({ data: followers.map(({ candidate }) => ({ userId: candidate.userId, type: 'NEW_COMPANY_JOB', title: 'Công ty bạn theo dõi có việc mới', content: `${job.title} đang tuyển dụng tại công ty bạn theo dõi.`, link: `/jobs/${job.id}` })) });
+    }
     await transaction.auditLog.create({
       data: { userId: req.user.id, action: 'JOB_MODERATION_UPDATED', entity: 'Job', entityId: job.id, metadata: { fromStatus: job.status, toStatus: req.body.status, note: req.body.note || null } }
     });
     return result;
   });
   res.json({ success: true, data: updated });
+}));
+
+router.get('/reviews', validate(reviewListSchema), asyncHandler(async (req, res) => {
+  const { status } = req.query;
+  const reviews = await prisma.companyReview.findMany({ where: { status }, include: { company: { select: { id: true, name: true } }, user: { select: { id: true, fullName: true, email: true } } }, orderBy: { createdAt: 'desc' } });
+  res.json({ success: true, data: reviews.map(({ user, userId, ...review }) => ({ ...review, author: review.isAnonymous ? null : user })) });
+}));
+
+router.patch('/reviews/:id/moderation', validate(reviewModerationSchema), asyncHandler(async (req, res) => {
+  const { status } = req.body;
+  const review = await prisma.companyReview.findUnique({ where: { id: req.params.id } });
+  if (!review) throw new ApiError(404, 'Không tìm thấy review');
+  const updated = await prisma.$transaction(async (transaction) => {
+    const result = await transaction.companyReview.update({ where: { id: review.id }, data: { status, moderationNote: req.body.note || null } });
+    await transaction.auditLog.create({ data: { userId: req.user.id, action: 'COMPANY_REVIEW_MODERATION_UPDATED', entity: 'CompanyReview', entityId: review.id, metadata: { fromStatus: review.status, toStatus: status, note: req.body.note || null } } });
+    return result;
+  });
+  const { userId, ...safeReview } = updated;
+  res.json({ success: true, data: safeReview });
 }));
 
 module.exports = router;

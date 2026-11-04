@@ -5,15 +5,34 @@ const asyncHandler = require('../utils/asyncHandler');
 const { authenticate, authorize } = require('../middleware/auth');
 const { calculateMatchScore, buildRuleExplanation } = require('../services/matching.service');
 const { explainMatch, chat } = require('../services/llm.service');
+const validate = require('../middleware/validate');
+const rateLimit = require('express-rate-limit');
 
 const router = require('express').Router();
-const idSchema = z.coerce.number().int().positive();
 const candidateQuery = z.object({ limit: z.coerce.number().int().min(1).max(50).default(10) });
 const recruiterQuery = z.object({
   requiredSkillIds: z.string().optional(),
   minExperience: z.coerce.number().min(0).optional(),
   location: z.string().max(150).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20)
+});
+const candidateListSchema = z.object({ body: z.object({}), params: z.object({}), query: candidateQuery });
+const recruiterListSchema = z.object({
+  body: z.object({}),
+  params: z.object({ jobId: z.coerce.number().int().positive() }),
+  query: recruiterQuery
+});
+const chatSchema = z.object({
+  body: z.object({ message: z.string().trim().min(1).max(2000) }),
+  params: z.object({}), query: z.object({})
+});
+const aiRateLimit = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => String(req.user.id),
+  message: { success: false, message: 'Bạn đã sử dụng quá nhiều yêu cầu AI trong giờ này' }
 });
 
 async function getCandidate(userId) {
@@ -42,8 +61,8 @@ async function saveScore(candidate, job, application, result, userId) {
   return { ...result, explanation: finalExplanation, matchScoreId: score.id };
 }
 
-router.get('/jobs', authenticate, authorize('CANDIDATE'), asyncHandler(async (req, res) => {
-  const { limit } = candidateQuery.parse(req.query);
+router.get('/jobs', authenticate, authorize('CANDIDATE'), aiRateLimit, validate(candidateListSchema), asyncHandler(async (req, res) => {
+  const { limit } = req.query;
   const candidate = await getCandidate(req.user.id);
   const jobs = await prisma.job.findMany({ where: { status: 'PUBLISHED' }, include: { company: true, skills: { include: { skill: true } } }, orderBy: { createdAt: 'desc' } });
   const applications = await prisma.application.findMany({ where: { candidateId: candidate.id }, select: { id: true, jobId: true } });
@@ -57,9 +76,9 @@ router.get('/jobs', authenticate, authorize('CANDIDATE'), asyncHandler(async (re
   res.json({ success: true, data: scored.slice(0, limit) });
 }));
 
-router.get('/jobs/:jobId/candidates', authenticate, authorize('RECRUITER'), asyncHandler(async (req, res) => {
-  const jobId = idSchema.parse(req.params.jobId);
-  const filters = recruiterQuery.parse(req.query);
+router.get('/jobs/:jobId/candidates', authenticate, authorize('RECRUITER'), aiRateLimit, validate(recruiterListSchema), asyncHandler(async (req, res) => {
+  const jobId = req.params.jobId;
+  const filters = req.query;
   const recruiter = await prisma.recruiter.findUnique({ where: { userId: req.user.id } });
   if (!recruiter) throw new ApiError(403, 'Tài khoản chưa được liên kết với nhà tuyển dụng');
   const job = await prisma.job.findFirst({ where: { id: jobId, companyId: recruiter.companyId }, include: { skills: { include: { skill: true } }, company: true } });
@@ -82,8 +101,8 @@ router.get('/jobs/:jobId/candidates', authenticate, authorize('RECRUITER'), asyn
   res.json({ success: true, data: { job, items: results.slice(0, filters.limit) } });
 }));
 
-router.post('/chat', authenticate, asyncHandler(async (req, res) => {
-  const message = z.string().min(1).max(2000).parse(req.body.message);
+router.post('/chat', authenticate, authorize('CANDIDATE', 'RECRUITER'), aiRateLimit, validate(chatSchema), asyncHandler(async (req, res) => {
+  const { message } = req.body;
   const candidate = req.user.role === 'CANDIDATE' ? await getCandidate(req.user.id) : null;
   const recruiter = req.user.role === 'RECRUITER' ? await prisma.recruiter.findUnique({ where: { userId: req.user.id } }) : null;
   if (req.user.role === 'RECRUITER' && !recruiter) throw new ApiError(403, 'Tài khoản chưa được liên kết với nhà tuyển dụng');

@@ -1,0 +1,33 @@
+# Local secrets and environment overrides
+**/.env
+**/.env.*
+!**/.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Runtime data
+**/uploads/
+**/public/logos/
+**/logs/
+*.log
+
+# Test and generated analysis artifacts
+**/coverage/
+**/playwright-report/
+**/test-results/
+**/.auth/
+**/e2e-artifacts/
+back-end/data/evaluation-results/
+back-end/data/evaluation-snapshots/
+back-end/data/**/*.validation.json
+
+# Local database dumps (Prisma migration SQL remains visible)
+back-end/database/job_connect_*.sql
+**/*.sql.gz
+**/*.dump
+
+# Dependencies and build output
+**/node_modules/
+**/dist/

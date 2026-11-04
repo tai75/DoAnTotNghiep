@@ -4,10 +4,17 @@ const path = require('path');
 const crypto = require('crypto');
 const multer = require('multer');
 const prisma = require('../config/prisma');
+const config = require('../config/env');
 const ApiError = require('../utils/apiError');
 const asyncHandler = require('../utils/asyncHandler');
 const validate = require('../middleware/validate');
 const { authenticate, authorize } = require('../middleware/auth');
+const mammoth = require('mammoth');
+const pdfParse = require('pdf-parse');
+const { extractResumeProfile, resumeImportSchema, analyzeResumeForJob } = require('../services/llm.service');
+const { calculateMatchScore } = require('../services/matching.service');
+
+const httpUrl = z.string().url().max(500).refine((value) => /^https?:\/\//i.test(value), 'Chỉ chấp nhận liên kết http hoặc https');
 
 const profileSchema = z.object({
   body: z.object({
@@ -16,7 +23,7 @@ const profileSchema = z.object({
     location: z.string().max(150).nullable().optional(),
     yearsExperience: z.number().nonnegative().max(99.9).nullable().optional(),
     education: z.string().max(255).nullable().optional(),
-    resumeUrl: z.string().url().max(500).nullable().optional(),
+    resumeUrl: httpUrl.nullable().optional(),
     desiredPosition: z.string().max(180).nullable().optional(),
     desiredSalary: z.number().nonnegative().nullable().optional(),
     desiredLocation: z.string().max(150).nullable().optional(),
@@ -24,6 +31,36 @@ const profileSchema = z.object({
     isSearchable: z.boolean().optional()
   }).refine((body) => Object.keys(body).length > 0, 'Cần có ít nhất một trường để cập nhật'),
   params: z.object({}),
+  query: z.object({})
+});
+const alertFields = {
+  name: z.string().min(1).max(150),
+  keyword: z.string().max(180).nullable().optional(),
+  location: z.string().max(150).nullable().optional(),
+  employmentType: z.enum(['FULL_TIME', 'PART_TIME', 'INTERNSHIP', 'CONTRACT', 'REMOTE', 'HYBRID']).nullable().optional(),
+  minSalary: z.number().nonnegative().nullable().optional(),
+  skillIds: z.array(z.number().int().positive()).max(100).default([]),
+  frequency: z.enum(['INSTANT', 'DAILY', 'WEEKLY']).default('DAILY'),
+  isActive: z.boolean().default(true)
+};
+const alertSchema = z.object({
+  body: z.object(alertFields),
+  params: z.object({}),
+  query: z.object({})
+});
+const alertUpdateSchema = z.object({
+  body: z.object(alertFields).partial().refine((body) => Object.keys(body).length > 0, 'Cần có ít nhất một trường để cập nhật'),
+  params: z.object({ id: z.coerce.number().int().positive() }),
+  query: z.object({})
+});
+const alertDeleteSchema = z.object({
+  body: z.object({}),
+  params: z.object({ id: z.coerce.number().int().positive() }),
+  query: z.object({})
+});
+const invitationResponseSchema = z.object({
+  body: z.object({ status: z.enum(['ACCEPTED', 'DECLINED']) }),
+  params: z.object({ id: z.coerce.number().int().positive() }),
   query: z.object({})
 });
 
@@ -34,10 +71,68 @@ const skillsSchema = z.object({
   params: z.object({}),
   query: z.object({})
 });
+const importProfileSchema = resumeImportSchema.extend({
+  education: resumeImportSchema.shape.education,
+  experience: resumeImportSchema.shape.experience,
+  projects: resumeImportSchema.shape.projects
+});
+const importConfirmSchema = z.object({
+  body: importProfileSchema,
+  params: z.object({ id: z.coerce.number().int().positive() }),
+  query: z.object({})
+});
 
 const router = require('express').Router();
 
-const uploadsDirectory = path.join(__dirname, '../../uploads');
+router.get('/alerts/unsubscribe', asyncHandler(async (req, res) => {
+  const alertId = Number(req.query.id);
+  const token = String(req.query.token || '');
+  const expected = crypto.createHmac('sha256', process.env.JWT_SECRET).update(String(alertId)).digest('hex');
+  const validToken = token.length === expected.length && crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expected));
+  if (!Number.isInteger(alertId) || !validToken) throw new ApiError(400, 'Liên kết hủy đăng ký không hợp lệ');
+  await prisma.jobAlert.update({ where: { id: alertId }, data: { isActive: false } });
+  res.json({ success: true, message: 'Đã hủy thông báo việc làm' });
+}));
+
+router.get('/me/alerts', authenticate, authorize('CANDIDATE'), asyncHandler(async (req, res) => {
+  const candidate = await findCandidate(req.user.id);
+  const alerts = await prisma.jobAlert.findMany({ where: { candidateId: candidate.id }, orderBy: { createdAt: 'desc' } });
+  res.json({ success: true, data: alerts });
+}));
+
+router.post('/me/alerts', authenticate, authorize('CANDIDATE'), validate(alertSchema), asyncHandler(async (req, res) => {
+  const candidate = await findCandidate(req.user.id);
+  const count = await prisma.jobAlert.count({ where: { candidateId: candidate.id } });
+  if (count >= 20) throw new ApiError(400, 'Mỗi ứng viên chỉ được tạo tối đa 20 thông báo');
+  const alert = await prisma.jobAlert.create({ data: { ...req.body, candidateId: candidate.id, skillIds: req.body.skillIds } });
+  res.status(201).json({ success: true, data: alert });
+}));
+
+router.patch('/me/alerts/:id', authenticate, authorize('CANDIDATE'), validate(alertUpdateSchema), asyncHandler(async (req, res) => {
+  const candidate = await findCandidate(req.user.id);
+  const alert = await prisma.jobAlert.findFirst({ where: { id: req.params.id, candidateId: candidate.id } });
+  if (!alert) throw new ApiError(404, 'Không tìm thấy thông báo việc làm');
+  const updated = await prisma.jobAlert.update({ where: { id: alert.id }, data: req.body });
+  res.json({ success: true, data: updated });
+}));
+
+router.patch('/me/invitations/:id', authenticate, authorize('CANDIDATE'), validate(invitationResponseSchema), asyncHandler(async (req, res) => {
+  const candidate = await findCandidate(req.user.id);
+  const status = req.body.status;
+  const invitation = await prisma.talentInvitation.findFirst({ where: { id: req.params.id, candidateId: candidate.id, status: 'PENDING' } });
+  if (!invitation) throw new ApiError(404, 'Không tìm thấy lời mời');
+  const updated = await prisma.talentInvitation.update({ where: { id: invitation.id }, data: { status, respondedAt: new Date() } });
+  res.json({ success: true, data: updated });
+}));
+
+router.delete('/me/alerts/:id', authenticate, authorize('CANDIDATE'), validate(alertDeleteSchema), asyncHandler(async (req, res) => {
+  const candidate = await findCandidate(req.user.id);
+  const result = await prisma.jobAlert.deleteMany({ where: { id: req.params.id, candidateId: candidate.id } });
+  if (!result.count) throw new ApiError(404, 'Không tìm thấy thông báo việc làm');
+  res.json({ success: true, data: { id: Number(req.params.id) } });
+}));
+
+const uploadsDirectory = config.uploadsDirectory;
 const allowedResumeTypes = new Map([
   ['application/pdf', '.pdf'],
   ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.docx']
@@ -61,6 +156,18 @@ const resumeUpload = multer({
     callback(null, true);
   }
 });
+const MAX_RESUME_TEXT_LENGTH = 30000;
+async function extractResumeText(resume) {
+  const filePath = path.join(uploadsDirectory, resume.path);
+  if (!fs.existsSync(filePath)) throw new ApiError(404, 'File CV không còn tồn tại');
+  const buffer = fs.readFileSync(filePath);
+  const result = resume.mimeType === 'application/pdf'
+    ? await pdfParse(buffer)
+    : await mammoth.extractRawText({ buffer });
+  const text = String(result.text || '').replace(/\s+/g, ' ').trim();
+  if (!text) throw new ApiError(422, 'Không tìm thấy văn bản trong CV');
+  return text.slice(0, MAX_RESUME_TEXT_LENGTH);
+}
 function handleResumeUpload(req, res, next) {
   resumeUpload.single('file')(req, res, (error) => {
     if (!error) return next();
@@ -68,6 +175,37 @@ function handleResumeUpload(req, res, next) {
     if (error.code === 'LIMIT_FILE_SIZE') return next(new ApiError(400, 'CV không được vượt quá 5MB'));
     return next(new ApiError(400, 'File CV không hợp lệ'));
   });
+}
+function hasValidSignature(filePath, extension) {
+  const buffer = fs.readFileSync(filePath);
+  if (extension === '.pdf') {
+    if (buffer.length < 8 || buffer.subarray(0, 5).toString('latin1') !== '%PDF-') return false;
+    return buffer.subarray(Math.max(0, buffer.length - 2048)).includes(Buffer.from('%%EOF'));
+  }
+  if (extension !== '.docx' || buffer.length < 22 || buffer.readUInt32LE(0) !== 0x04034b50) return false;
+
+  const centralHeader = Buffer.from([0x50, 0x4b, 0x01, 0x02]);
+  let offset = 0;
+  let entryCount = 0;
+  let totalUncompressedSize = 0;
+  const names = new Set();
+  while ((offset = buffer.indexOf(centralHeader, offset)) !== -1) {
+    if (offset + 46 > buffer.length) return false;
+    const uncompressedSize = buffer.readUInt32LE(offset + 24);
+    const nameLength = buffer.readUInt16LE(offset + 28);
+    const extraLength = buffer.readUInt16LE(offset + 30);
+    const commentLength = buffer.readUInt16LE(offset + 32);
+    const end = offset + 46 + nameLength + extraLength + commentLength;
+    if (uncompressedSize === 0xffffffff || end > buffer.length) return false;
+    const name = buffer.subarray(offset + 46, offset + 46 + nameLength).toString('utf8').replace(/\\/g, '/');
+    if (!name || name.startsWith('/') || name.split('/').includes('..')) return false;
+    names.add(name);
+    entryCount += 1;
+    totalUncompressedSize += uncompressedSize;
+    if (entryCount > 2000 || totalUncompressedSize > 25 * 1024 * 1024) return false;
+    offset = end;
+  }
+  return entryCount > 0 && names.has('[Content_Types].xml') && names.has('word/document.xml');
 }
 
 const dateField = z.coerce.date().nullable().optional();
@@ -98,7 +236,7 @@ const projectSchema = z.object({
   body: z.object({
     name: z.string().min(1).max(180),
     description: z.string().max(10000).nullable().optional(),
-    link: z.string().url().max(500).nullable().optional(),
+    link: httpUrl.nullable().optional(),
     technologies: z.array(z.string().max(100)).max(50).default([])
   }),
   params: z.object({}),
@@ -117,6 +255,9 @@ const savedJobSchema = z.object({
   params: z.object({ jobId: z.coerce.number().int().positive() }),
   query: z.object({})
 });
+function canSaveJob(job) {
+  return Boolean(job && job.status === 'PUBLISHED');
+}
 const candidateSearchSchema = z.object({
   body: z.object({}),
   params: z.object({}),
@@ -144,6 +285,28 @@ const profileInclude = {
   resumes: { orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }] }
 };
 
+function buildCompleteness(candidate) {
+  const checklist = [
+    { id: 'headline', label: 'Thêm tiêu đề nghề nghiệp', completed: Boolean(candidate.headline), tab: 'general', field: 'headline' },
+    { id: 'bio', label: 'Viết phần giới thiệu', completed: Boolean(candidate.bio), tab: 'general', field: 'bio' },
+    { id: 'skills', label: 'Thêm ít nhất 5 kỹ năng', completed: candidate.skills.length >= 5, tab: 'skills', field: 'skills' },
+    { id: 'education', label: 'Thêm ít nhất một mục học vấn', completed: candidate.educations.length >= 1, tab: 'education', field: 'education' },
+    { id: 'experienceOrProject', label: 'Thêm kinh nghiệm hoặc dự án', completed: candidate.experiences.length >= 1 || candidate.projects.length >= 1, tab: 'experience', field: 'experience' },
+    { id: 'defaultResume', label: 'Tải lên và chọn CV mặc định', completed: candidate.resumes.some((resume) => resume.isDefault), tab: 'resumes', field: 'resumes' },
+    { id: 'desiredPosition', label: 'Chọn vị trí mong muốn', completed: Boolean(candidate.desiredPosition), tab: 'desired', field: 'desiredPosition' },
+    { id: 'desiredSalary', label: 'Nhập mức lương mong muốn', completed: candidate.desiredSalary !== null && candidate.desiredSalary !== undefined, tab: 'desired', field: 'desiredSalary' },
+    { id: 'desiredLocation', label: 'Nhập địa điểm mong muốn', completed: Boolean(candidate.desiredLocation), tab: 'desired', field: 'desiredLocation' }
+  ];
+  const completed = checklist.filter((item) => item.completed).length;
+  return {
+    percentage: Math.round((completed / checklist.length) * 100),
+    completed,
+    total: checklist.length,
+    checklist,
+    missing: checklist.filter((item) => !item.completed)
+  };
+}
+
 router.get('/skills', asyncHandler(async (req, res) => {
   const skills = await prisma.skill.findMany({ orderBy: { name: 'asc' } });
   res.json({ success: true, data: skills });
@@ -157,12 +320,12 @@ router.get('/resumes/:id/download', authenticate, validate(resourceIdSchema), as
   if (!resume) throw new ApiError(404, 'Không tìm thấy CV');
 
   let canDownload = req.user.role === 'ADMIN' || (req.user.role === 'CANDIDATE' && resume.candidate.userId === req.user.id);
-  if (req.user.role === 'RECRUITER') {
+    if (req.user.role === 'RECRUITER') {
     const recruiter = await prisma.recruiter.findUnique({ where: { userId: req.user.id } });
     if (recruiter) {
       const application = await prisma.application.findFirst({
         where: {
-          candidateId: resume.candidateId,
+          resumeId: resume.id,
           job: { companyId: recruiter.companyId }
         }
       });
@@ -207,6 +370,72 @@ router.get('/', authenticate, authorize('RECRUITER'), validate(candidateSearchSc
     prisma.candidate.count({ where })
   ]);
   res.json({ success: true, data: { items, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } } });
+}));
+
+router.get('/me/completeness', authenticate, authorize('CANDIDATE'), asyncHandler(async (req, res) => {
+  const candidate = await prisma.candidate.findUnique({
+    where: { userId: req.user.id },
+    select: {
+      headline: true,
+      bio: true,
+      desiredPosition: true,
+      desiredSalary: true,
+      desiredLocation: true,
+      skills: { select: { skillId: true } },
+      educations: { select: { id: true } },
+      experiences: { select: { id: true } },
+      projects: { select: { id: true } },
+      resumes: { select: { isDefault: true } }
+    }
+  });
+  if (!candidate) throw new ApiError(404, 'Không tìm thấy hồ sơ ứng viên');
+  res.json({ success: true, data: buildCompleteness(candidate) });
+}));
+
+router.post('/me/job-analysis/:jobId', authenticate, authorize('CANDIDATE'), validate(z.object({
+  body: z.object({}),
+  params: z.object({ jobId: z.coerce.number().int().positive() }),
+  query: z.object({})
+})), asyncHandler(async (req, res) => {
+  const candidate = await prisma.candidate.findUnique({
+    where: { userId: req.user.id },
+    include: { skills: { include: { skill: true } }, resumes: { where: { isDefault: true }, take: 1 } }
+  });
+  const job = await prisma.job.findFirst({
+    where: { id: req.params.jobId, status: 'PUBLISHED', deadline: { OR: [{ gte: new Date() }, { equals: null }] } },
+    include: { skills: { include: { skill: true } } }
+  });
+  if (!candidate) throw new ApiError(404, 'Không tìm thấy hồ sơ ứng viên');
+  if (!job) throw new ApiError(404, 'Không tìm thấy việc làm đang tuyển');
+  const resume = candidate.resumes[0];
+  if (!resume) throw new ApiError(400, 'Bạn cần chọn CV mặc định trước khi phân tích');
+  const match = calculateMatchScore(candidate, job);
+  const cached = await prisma.resumeJobAnalysis.findUnique({ where: { resumeId_jobId: { resumeId: resume.id, jobId: job.id } } });
+  if (cached) {
+    return res.json({ success: true, data: {
+      fitScore: Number(cached.fitScore),
+      missingKeywords: cached.missingKeywords,
+      strengths: cached.strengths,
+      suggestions: cached.suggestions,
+      matchedSkills: match.matchedSkills,
+      missingSkills: match.missingSkills,
+      disclaimer: 'Đây là gợi ý, không phải quyết định tuyển dụng.'
+    } });
+  }
+  const text = await extractResumeText(resume);
+  const result = await analyzeResumeForJob(req.user.id, text, job, match);
+  const analysis = await prisma.resumeJobAnalysis.create({
+    data: { resumeId: resume.id, jobId: job.id, fitScore: result.fitScore, missingKeywords: result.missingKeywords, strengths: result.strengths, suggestions: result.suggestions }
+  });
+  res.json({ success: true, data: {
+    fitScore: Number(analysis.fitScore),
+    missingKeywords: analysis.missingKeywords,
+    strengths: analysis.strengths,
+    suggestions: analysis.suggestions,
+    matchedSkills: match.matchedSkills,
+    missingSkills: match.missingSkills,
+    disclaimer: 'Đây là gợi ý, không phải quyết định tuyển dụng.'
+  } });
 }));
 
 router.get('/me', authenticate, authorize('CANDIDATE'), asyncHandler(async (req, res) => {
@@ -298,36 +527,137 @@ router.get('/me/resumes', authenticate, authorize('CANDIDATE'), asyncHandler(asy
   res.json({ success: true, data: items });
 }));
 
-router.post('/me/resumes', authenticate, authorize('CANDIDATE'), handleResumeUpload, asyncHandler(async (req, res) => {
-  if (!req.file) throw new ApiError(400, 'Vui lòng chọn file CV');
-  const extension = path.extname(req.file.originalname).toLowerCase();
-  const expectedMimeType = extension === '.pdf'
-    ? 'application/pdf'
-    : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-  if (req.file.mimetype !== expectedMimeType) {
-    fs.unlinkSync(req.file.path);
-    throw new ApiError(400, 'Mime type của CV không hợp lệ');
-  }
-
-  const candidate = await findCandidate(req.user.id);
-  const { isDefault } = resumeMetadataSchema.parse(req.body);
-  const resume = await prisma.$transaction(async (transaction) => {
-    const existingCount = await transaction.candidateResume.count({ where: { candidateId: candidate.id } });
-    if (isDefault === 'true' || existingCount === 0) {
-      await transaction.candidateResume.updateMany({ where: { candidateId: candidate.id }, data: { isDefault: false } });
+router.post('/me/resumes/:id/import', authenticate, authorize('CANDIDATE'), validate(z.object({
+  body: z.object({}),
+  params: z.object({ id: z.coerce.number().int().positive() }),
+  query: z.object({})
+})), asyncHandler(async (req, res) => {
+  const { item } = await candidateResource(req, 'candidateResume', req.params.id);
+  const text = await extractResumeText(item);
+  const extracted = await extractResumeProfile(req.user.id, text);
+  const names = [...new Set(extracted.skills.map((name) => name.trim()).filter(Boolean))];
+  const existing = names.length
+    ? await prisma.skill.findMany({ where: { name: { in: names } }, select: { id: true, name: true } })
+    : [];
+  const existingNames = new Set(existing.map((skill) => skill.name.toLowerCase()));
+  res.json({
+    success: true,
+    data: {
+      ...extracted,
+      matchedSkills: existing,
+      suggestedSkills: names.filter((name) => !existingNames.has(name.toLowerCase()))
     }
-    return transaction.candidateResume.create({
-      data: {
-        candidateId: candidate.id,
-        fileName: req.file.originalname,
-        path: req.file.filename,
-        mimeType: req.file.mimetype,
-        size: req.file.size,
-        isDefault: isDefault === 'true' || existingCount === 0
-      }
-    });
   });
-  res.status(201).json({ success: true, data: resume });
+}));
+
+router.post('/me/resumes/:id/import/confirm', authenticate, authorize('CANDIDATE'), validate(importConfirmSchema), asyncHandler(async (req, res) => {
+  const { candidate, item } = await candidateResource(req, 'candidateResume', req.params.id);
+  const payload = req.body;
+  const skillNames = [...new Set(payload.skills.map((name) => name.trim()).filter(Boolean))];
+  const allSkills = skillNames.length
+    ? await prisma.skill.findMany({ select: { id: true, name: true } })
+    : [];
+  const skillByName = new Map(allSkills.map((skill) => [skill.name.toLowerCase(), skill]));
+  const profile = await prisma.$transaction(async (transaction) => {
+    const skillIds = [];
+    for (const name of skillNames) {
+      const key = name.toLowerCase();
+      let skill = skillByName.get(key);
+      if (!skill) {
+        skill = await transaction.skill.create({ data: { name } });
+        skillByName.set(key, skill);
+      }
+      skillIds.push(skill.id);
+    }
+    await transaction.candidateSkill.deleteMany({ where: { candidateId: candidate.id } });
+    if (skillIds.length) {
+      await transaction.candidateSkill.createMany({
+        data: [...new Set(skillIds)].map((skillId) => ({ candidateId: candidate.id, skillId }))
+      });
+    }
+    await transaction.candidate.update({ where: { id: candidate.id }, data: { headline: payload.headline || null } });
+    if (payload.education.length) {
+      await transaction.candidateEducation.createMany({
+        data: payload.education.map((education) => ({
+          candidateId: candidate.id,
+          school: education.school,
+          major: education.major || null,
+          degree: education.degree || null,
+          fromDate: education.fromDate ? new Date(education.fromDate) : null,
+          toDate: education.toDate ? new Date(education.toDate) : null
+        }))
+      });
+    }
+    if (payload.experience.length) {
+      await transaction.candidateExperience.createMany({
+        data: payload.experience.map((experience) => ({
+          candidateId: candidate.id,
+          company: experience.company,
+          title: experience.title,
+          description: experience.description || null,
+          fromDate: experience.fromDate ? new Date(experience.fromDate) : null,
+          toDate: experience.toDate ? new Date(experience.toDate) : null,
+          isCurrent: experience.isCurrent
+        }))
+      });
+    }
+    if (payload.projects.length) {
+      await transaction.candidateProject.createMany({
+        data: payload.projects.map((project) => ({
+          candidateId: candidate.id,
+          name: project.name,
+          description: project.description || null,
+          link: project.link || null,
+          technologies: project.technologies
+        }))
+      });
+    }
+    return transaction.candidate.findUnique({ where: { id: candidate.id }, include: profileInclude });
+  });
+  res.json({ success: true, data: profile });
+}));
+
+router.post('/me/resumes', authenticate, authorize('CANDIDATE'), handleResumeUpload, asyncHandler(async (req, res) => {
+  try {
+    if (!req.file) throw new ApiError(400, 'Vui lòng chọn file CV');
+    const extension = path.extname(req.file.originalname).toLowerCase();
+    const expectedMimeType = extension === '.pdf'
+      ? 'application/pdf'
+      : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    if (req.file.mimetype !== expectedMimeType) {
+      throw new ApiError(400, 'Mime type của CV không hợp lệ');
+    }
+    if (!hasValidSignature(req.file.path, extension)) {
+      throw new ApiError(400, 'Nội dung file không đúng định dạng CV');
+    }
+
+    const candidate = await findCandidate(req.user.id);
+    const safeFileName = path.basename(req.file.originalname).replace(/[\u0000-\u001f\u007f]/g, '').trim();
+    if (!safeFileName || safeFileName.length > 255) throw new ApiError(400, 'Tên file CV không hợp lệ');
+    const { isDefault } = resumeMetadataSchema.parse(req.body);
+    const resume = await prisma.$transaction(async (transaction) => {
+      const existingCount = await transaction.candidateResume.count({ where: { candidateId: candidate.id } });
+      if (existingCount >= 10) throw new ApiError(400, 'Mỗi ứng viên chỉ được lưu tối đa 10 CV');
+      const makeDefault = isDefault === 'true' || existingCount === 0;
+      if (makeDefault) {
+        await transaction.candidateResume.updateMany({ where: { candidateId: candidate.id }, data: { isDefault: false } });
+      }
+      return transaction.candidateResume.create({
+        data: {
+          candidateId: candidate.id,
+          fileName: safeFileName,
+          path: req.file.filename,
+          mimeType: req.file.mimetype,
+          size: req.file.size,
+          isDefault: makeDefault
+        }
+      });
+    });
+    res.status(201).json({ success: true, data: resume });
+  } catch (error) {
+    if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+    throw error;
+  }
 }));
 
 router.patch('/me/resumes/:id', authenticate, authorize('CANDIDATE'), validate(z.object({
@@ -366,7 +696,7 @@ router.get('/me/saved-jobs', authenticate, authorize('CANDIDATE'), asyncHandler(
 router.post('/me/saved-jobs/:jobId', authenticate, authorize('CANDIDATE'), validate(savedJobSchema), asyncHandler(async (req, res) => {
   const candidate = await findCandidate(req.user.id);
   const job = await prisma.job.findUnique({ where: { id: req.params.jobId } });
-  if (!job) throw new ApiError(404, 'Không tìm thấy việc làm');
+  if (!canSaveJob(job)) throw new ApiError(404, 'Không tìm thấy việc làm');
   const item = await prisma.savedJob.upsert({
     where: { candidateId_jobId: { candidateId: candidate.id, jobId: job.id } },
     update: {},
@@ -382,3 +712,7 @@ router.delete('/me/saved-jobs/:jobId', authenticate, authorize('CANDIDATE'), val
 }));
 
 module.exports = router;
+module.exports.hasValidSignature = hasValidSignature;
+module.exports.canSaveJob = canSaveJob;
+module.exports.httpUrl = httpUrl;
+module.exports.buildCompleteness = buildCompleteness;

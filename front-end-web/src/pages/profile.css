@@ -20,4 +20,25 @@
 .resource-form { max-width: 620px; display: grid; gap: 14px; margin-top: 24px; }
 .skill-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }.skill-list label { color: #4b5568; }
 .switch-row { display: flex !important; align-items: center; gap: 10px; }.upload-box { display: block; padding: 24px; border: 2px dashed #cbd3df; border-radius: 14px; margin-bottom: 20px; cursor: pointer; }.upload-box input { display: block; margin-top: 10px; }
+.completion-card small { color: #cbd3df; }
+.profile-completeness-card, .job-search-card { display: grid; gap: 16px; padding: 22px; margin-bottom: 24px; border: 1px solid #dfe3eb; border-radius: 16px; background: white; }
+.profile-completeness-card h2, .job-search-card h2 { margin: 0; font-size: 1.15rem; }
+.profile-completeness-card ul { display: grid; gap: 10px; padding: 0; margin: 0; list-style: none; }
+.profile-completeness-card li { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding-top: 10px; border-top: 1px solid #edf0f5; }
+.profile-completeness-card button { border: 0; background: none; color: #1769aa; cursor: pointer; font-weight: 700; }
+.job-search-card { grid-template-columns: 1fr auto; align-items: center; margin: 0; background: #f7fbff; }
+.job-search-card p, .profile-hint { color: #697386; }
+.job-search-card p { margin-bottom: 0; }
 @media (max-width: 700px) { .profile-header { flex-direction: column; }.completion-card { width: 100%; box-sizing: border-box; }.resource-item { align-items: flex-start; flex-wrap: wrap; } }
+@media (max-width: 480px) {
+  .profile-shell { padding: 28px 14px 88px; }
+  .profile-tabs { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-inline: contain; }
+  .profile-tabs button { flex: 0 0 auto; min-height: 44px; padding-inline: 12px; }
+  .profile-panel { border-radius: 14px; padding: 18px 14px; }
+  .resource-item { display: grid; gap: 10px; }
+  .resource-item strong { min-width: 0; overflow-wrap: anywhere; }
+  .resource-item p { overflow-wrap: anywhere; }
+  .resource-item button, .profile-submit { min-height: 44px; }
+  .job-search-card { grid-template-columns: 1fr; }
+  .profile-completeness-card li { align-items: flex-start; flex-direction: column; }
+}

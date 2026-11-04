@@ -12,7 +12,14 @@ async function authenticate(req, res, next) {
   if (!token) return next(new ApiError(401, 'Vui lòng đăng nhập'));
 
   try {
-    const payload = jwt.verify(token, config.jwtSecret);
+    const payload = jwt.verify(token, config.jwtSecret, {
+      algorithms: ['HS256'],
+      issuer: config.jwtIssuer,
+      audience: config.jwtAudience
+    });
+    if (payload.sub !== String(payload.userId)) {
+      return next(new ApiError(401, 'Token không hợp lệ hoặc đã hết hạn'));
+    }
     const user = await prisma.user.findUnique({ where: { id: payload.userId } });
     if (!user || user.status !== 'ACTIVE' || user.tokenVersion !== (payload.tokenVersion || 0)) {
       return next(new ApiError(401, 'Tài khoản không hợp lệ hoặc đã bị khóa'));

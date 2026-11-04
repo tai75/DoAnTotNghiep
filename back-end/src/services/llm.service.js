@@ -1,8 +1,53 @@
+const { z } = require('zod');
 const config = require('../config/env');
 
 const requestCounts = new Map();
 const WINDOW_MS = 60 * 60 * 1000;
 const MAX_REQUESTS_PER_USER = 20;
+const DEFAULT_MAX_ATTEMPTS = 2;
+const DEFAULT_RETRY_BASE_MS = 100;
+
+class GeminiError extends Error {
+  constructor(message, { code = 'gemini_error', status = null, retryable = false } = {}) {
+    super(message);
+    this.name = 'GeminiError';
+    this.code = code;
+    this.status = status;
+    this.retryable = retryable;
+  }
+}
+const resumeDate = z.string().max(30).nullable().default(null).refine((value) => !value || !Number.isNaN(Date.parse(value)), 'Ngày không hợp lệ');
+const resumeImportSchema = z.object({
+  headline: z.string().max(180).nullable().default(null),
+  skills: z.array(z.string().trim().min(1).max(100)).max(100).default([]),
+  education: z.array(z.object({
+    school: z.string().trim().min(1).max(255),
+    major: z.string().max(180).nullable().default(null),
+    degree: z.string().max(120).nullable().default(null),
+    fromDate: resumeDate,
+    toDate: resumeDate
+  })).max(20).default([]),
+  experience: z.array(z.object({
+    company: z.string().trim().min(1).max(180),
+    title: z.string().trim().min(1).max(180),
+    description: z.string().max(10000).nullable().default(null),
+    fromDate: resumeDate,
+    toDate: resumeDate,
+    isCurrent: z.boolean().default(false)
+  })).max(30).default([]),
+  projects: z.array(z.object({
+    name: z.string().trim().min(1).max(180),
+    description: z.string().max(10000).nullable().default(null),
+    link: z.string().max(500).nullable().default(null),
+    technologies: z.array(z.string().max(100)).max(50).default([])
+  })).max(30).default([])
+});
+const resumeJobAnalysisSchema = z.object({
+  fitScore: z.number().min(0).max(100),
+  missingKeywords: z.array(z.string().trim().min(1).max(100)).max(30),
+  strengths: z.array(z.string().trim().min(1).max(500)).length(3),
+  suggestions: z.array(z.string().trim().min(1).max(1000)).length(3)
+});
 
 function canUse(userId) {
   const now = Date.now();
@@ -16,39 +61,160 @@ function canUse(userId) {
   return true;
 }
 
-async function callGemini(contents, tools = []) {
-  if (!config.geminiApiKey) return null;
+function geminiErrorForStatus(status) {
+  if (status === 408) return new GeminiError('Gemini request timeout', { code: 'timeout', status, retryable: true });
+  if (status === 429) return new GeminiError('Gemini quota or rate limit exceeded', { code: 'quota_or_rate_limit', status, retryable: true });
+  if (status >= 500) return new GeminiError(`Gemini temporarily unavailable (${status})`, { code: 'provider_unavailable', status, retryable: true });
+  return new GeminiError(`Gemini rejected request (${status})`, { code: 'provider_rejected', status, retryable: false });
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function callGemini(contents, tools = [], dependencies = {}) {
+  const apiKey = dependencies.apiKey ?? config.geminiApiKey;
+  if (!apiKey) throw new GeminiError('GEMINI_API_KEY chưa được cấu hình', { code: 'configuration' });
+  const fetchImpl = dependencies.fetchImpl || global.fetch;
+  const timeoutMs = dependencies.timeoutMs ?? config.llmTimeoutMs;
+  if (typeof fetchImpl !== 'function') throw new GeminiError('Fetch API không khả dụng', { code: 'configuration' });
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new GeminiError('LLM timeout phải lớn hơn 0', { code: 'configuration' });
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), config.llmTimeoutMs);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${config.geminiModel}:generateContent?key=${encodeURIComponent(config.geminiApiKey)}`, {
+    const response = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${config.geminiModel}:generateContent`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
       body: JSON.stringify({ contents, ...(tools.length ? { tools: [{ functionDeclarations: tools }] } : {}) }),
       signal: controller.signal
     });
-    if (!response.ok) throw new Error(`Gemini request failed: ${response.status}`);
+    if (!response.ok) throw geminiErrorForStatus(response.status);
     return await response.json();
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new GeminiError('Gemini request timeout', { code: 'timeout', retryable: true });
+    if (error instanceof GeminiError) throw error;
+    throw new GeminiError('Không thể kết nối Gemini', { code: 'network', retryable: true });
   } finally {
     clearTimeout(timer);
   }
 }
 
-async function withRetry(operation) {
+async function withRetry(operation, dependencies = {}) {
+  const maxAttempts = dependencies.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
+  const retryBaseMs = dependencies.retryBaseMs ?? DEFAULT_RETRY_BASE_MS;
+  const waitImpl = dependencies.waitImpl || wait;
+  if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 6) throw new GeminiError('Số lần gọi Gemini không hợp lệ', { code: 'configuration' });
   let lastError;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try { return await operation(); } catch (error) { lastError = error; }
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!error?.retryable || attempt === maxAttempts - 1) throw error;
+      await waitImpl(retryBaseMs * (2 ** attempt));
+    }
   }
   throw lastError;
 }
 
-async function explainMatch(result, userId) {
-  if (!config.geminiApiKey || !canUse(`explain:${userId}`)) return null;
+async function explainMatch(result, userId, dependencies = {}) {
+  const apiKey = dependencies.apiKey ?? config.geminiApiKey;
+  if (!apiKey || !canUse(`explain:${userId}`)) return null;
   try {
     const response = await withRetry(() => callGemini([{ role: 'user', parts: [{ text: `Viết một câu tiếng Việt ngắn giải thích vì sao ứng viên phù hợp công việc. Điểm: ${result.score}/100. Kỹ năng khớp: ${result.matchedSkills.map((item) => item.name).join(', ') || 'không có'}. Kỹ năng thiếu: ${result.missingSkills.map((item) => item.name).join(', ') || 'không có'}. Chỉ trả về câu giải thích, không bịa dữ liệu.` }] }]));
     return response?.candidates?.[0]?.content?.parts?.find((part) => part.text)?.text?.trim() || null;
   } catch (error) {
     return null;
+  }
+}
+
+function parseJsonResponse(response) {
+  const text = response?.candidates?.[0]?.content?.parts?.find((part) => part.text)?.text?.trim();
+  if (!text) throw new Error('AI không trả về dữ liệu hồ sơ');
+  return JSON.parse(text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim());
+}
+
+async function extractResumeProfile(userId, text) {
+  if (!config.geminiApiKey) {
+    const error = new Error('AI chưa được cấu hình. Vui lòng nhập hồ sơ thủ công.');
+    error.statusCode = 503;
+    throw error;
+  }
+  if (!canUse(`resume-import:${userId}`)) {
+    const error = new Error('Bạn đã vượt quá giới hạn nhập hồ sơ bằng AI trong giờ này.');
+    error.statusCode = 429;
+    throw error;
+  }
+  try {
+    const response = await withRetry(() => callGemini([{ role: 'user', parts: [{ text: `Trích xuất hồ sơ ứng viên từ CV dưới đây. Chỉ trả về JSON hợp lệ, không markdown, đúng schema:
+{"headline":string|null,"skills":string[],"education":[{"school":string,"major":string|null,"degree":string|null,"fromDate":string|null,"toDate":string|null}],"experience":[{"company":string,"title":string,"description":string|null,"fromDate":string|null,"toDate":string|null,"isCurrent":boolean}],"projects":[{"name":string,"description":string|null,"link":string|null,"technologies":string[]}]}
+Không suy đoán thông tin không có trong CV; dùng null hoặc mảng rỗng. CV:
+${text}` }] }]));
+    return resumeImportSchema.parse(parseJsonResponse(response));
+  } catch (error) {
+    if (error.statusCode) throw error;
+    const invalid = new Error(error instanceof z.ZodError || error instanceof SyntaxError
+      ? 'AI trả về dữ liệu hồ sơ không đúng định dạng. Vui lòng thử lại hoặc nhập thủ công.'
+      : 'Không thể phân tích CV lúc này. Vui lòng thử lại sau.');
+    invalid.statusCode = error instanceof GeminiError && error.retryable ? 503 : 502;
+    throw invalid;
+  }
+}
+
+async function generateJobDescription(userId, details) {
+  if (!config.geminiApiKey) {
+    const error = new Error('AI chưa được cấu hình. Vui lòng nhập mô tả thủ công.');
+    error.statusCode = 503;
+    throw error;
+  }
+
+  if (!canUse(`job-description:${userId}`)) {
+    const error = new Error('Bạn đã vượt quá giới hạn gợi ý AI trong giờ này.');
+    error.statusCode = 429;
+    throw error;
+  }
+
+  try {
+    const response = await withRetry(() => callGemini([{ role: 'user', parts: [{ text: `Viết mô tả tuyển dụng bằng tiếng Việt, rõ ràng và không bịa thông tin. Dữ liệu: ${JSON.stringify(details)}. Chỉ trả về mô tả công việc.` }] }]));
+    return response?.candidates?.[0]?.content?.parts?.find((part) => part.text)?.text?.trim() || null;
+  } catch (error) {
+    return null;
+  }
+}
+
+async function analyzeResumeForJob(userId, resumeText, job, match) {
+  if (!config.geminiApiKey) {
+    const error = new Error('AI chưa được cấu hình. Vui lòng thử lại sau.');
+    error.statusCode = 503;
+    throw error;
+  }
+  if (!canUse(`resume-job-analysis:${userId}`)) {
+    const error = new Error('Bạn đã vượt quá giới hạn phân tích CV trong giờ này.');
+    error.statusCode = 429;
+    throw error;
+  }
+  const prompt = `Phân tích CV cho công việc. Chỉ trả JSON hợp lệ, không markdown, đúng schema:
+{"fitScore":number,"missingKeywords":string[],"strengths":[string,string,string],"suggestions":[string,string,string]}
+fitScore phải bằng hoặc thấp hơn điểm matching được cung cấp. missingKeywords chỉ chọn từ danh sách kỹ năng còn thiếu.
+Điểm matching: ${match.score}. Kỹ năng khớp: ${match.matchedSkills.map((item) => item.name).join(', ') || 'không có'}. Kỹ năng còn thiếu: ${match.missingSkills.map((item) => item.name).join(', ') || 'không có'}.
+Mô tả công việc:
+${job.description}
+CV:
+${resumeText}`;
+  try {
+    const response = await withRetry(() => callGemini([{ role: 'user', parts: [{ text: prompt }] }]));
+    const result = resumeJobAnalysisSchema.parse(parseJsonResponse(response));
+    const allowedMissing = new Set(match.missingSkills.map((item) => item.name.toLowerCase()));
+    return {
+      ...result,
+      fitScore: Math.min(result.fitScore, match.score),
+      missingKeywords: result.missingKeywords.filter((item) => allowedMissing.has(item.toLowerCase()))
+    };
+  } catch (error) {
+    if (error.statusCode) throw error;
+    const invalid = new Error('AI trả về kết quả phân tích không đúng định dạng. Vui lòng thử lại.');
+    invalid.statusCode = error instanceof GeminiError && error.retryable ? 503 : 502;
+    throw invalid;
   }
 }
 
@@ -77,4 +243,16 @@ async function chat({ userId, role, message, tools }) {
   return 'Không thể hoàn tất truy vấn AI.';
 }
 
-module.exports = { explainMatch, chat, MAX_REQUESTS_PER_USER };
+module.exports = {
+  GeminiError,
+  MAX_REQUESTS_PER_USER,
+  analyzeResumeForJob,
+  callGemini,
+  chat,
+  explainMatch,
+  extractResumeProfile,
+  generateJobDescription,
+  resumeImportSchema,
+  resumeJobAnalysisSchema,
+  withRetry
+};

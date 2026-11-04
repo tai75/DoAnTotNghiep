@@ -1,13 +1,16 @@
 import { useState } from 'react'
-import { useLocation } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/auth'
 
-const REFERENCE_IMAGE = 'http://localhost:5000/assets/-9ogxV-jue_gO6hLkt8wUrR9p_ZjF5bSU3RFoSMRneSqPNpxW794iOooyOy-udg2rhlmOFUOAfo4ImX_3lDKJrabmkbVvZRtxQcJaFUOr7Ht0MBTdC8o60DJmA23heR5PSPT2MfLrYAXwt3RkQr2EeCjVEsf-kExiKLZsfkaMEHep_SD6k-mXaaVxuGWfLxv.jpg'
+const ASSET_URL = (import.meta.env.VITE_ASSET_URL || '').replace(/\/$/, '')
+const REFERENCE_IMAGE = `${ASSET_URL}/assets/-9ogxV-jue_gO6hLkt8wUrR9p_ZjF5bSU3RFoSMRneSqPNpxW794iOooyOy-udg2rhlmOFUOAfo4ImX_3lDKJrabmkbVvZRtxQcJaFUOr7Ht0MBTdC8o60DJmA23heR5PSPT2MfLrYAXwt3RkQr2EeCjVEsf-kExiKLZsfkaMEHep_SD6k-mXaaVxuGWfLxv.jpg`
 const initialForm = { fullName: '', email: '', password: '', phone: '', role: 'CANDIDATE', companyName: '' }
 
 export default function AuthPage() {
   const { login } = useAuth()
   const { pathname } = useLocation()
+  const location = useLocation()
+  const navigate = useNavigate()
   const [mode, setMode] = useState(pathname === '/register' ? 'register' : 'login')
   const [form, setForm] = useState(initialForm)
   const [showPassword, setShowPassword] = useState(false)
@@ -36,7 +39,8 @@ export default function AuthPage() {
       : { email: form.email, password: form.password }
     try {
       await login(payload, isRegister)
-      setMessage({ type: 'success', text: isRegister ? 'Tạo tài khoản thành công.' : 'Đăng nhập thành công.' })
+      const returnTo = new URLSearchParams(location.search).get('returnTo')
+      navigate(returnTo && returnTo.startsWith('/') ? returnTo : '/jobs', { replace: true })
     } catch (error) {
       setMessage({ type: 'error', text: error.message })
     } finally {

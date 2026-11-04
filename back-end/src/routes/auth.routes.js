@@ -18,22 +18,29 @@ const authRateLimit = rateLimit({
   legacyHeaders: false,
   message: { success: false, message: 'Quá nhiều yêu cầu xác thực, vui lòng thử lại sau.' }
 });
+const refreshRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Quá nhiều yêu cầu làm mới phiên đăng nhập, vui lòng thử lại sau.' }
+});
 
 const registerSchema = z.object({
   body: z.object({
-    email: z.string().email(),
-    password: z.string().min(8),
-    fullName: z.string().min(2).max(150),
-    phone: z.string().max(30).optional(),
+    email: z.string().trim().email().max(254).transform((value) => value.toLowerCase()),
+    password: z.string().min(8).max(128),
+    fullName: z.string().trim().min(2).max(150),
+    phone: z.string().trim().max(30).optional(),
     role: z.enum(['CANDIDATE', 'RECRUITER']).default('CANDIDATE'),
-    companyName: z.string().min(2).max(180).optional()
+    companyName: z.string().trim().min(2).max(180).optional()
   }),
   params: z.object({}),
   query: z.object({})
 });
 
 const loginSchema = z.object({
-  body: z.object({ email: z.string().email(), password: z.string().min(1) }),
+  body: z.object({ email: z.string().trim().email().max(254).transform((value) => value.toLowerCase()), password: z.string().min(1).max(128) }),
   params: z.object({}),
   query: z.object({})
 });
@@ -49,15 +56,15 @@ const updateProfileSchema = z.object({
 
 const changePasswordSchema = z.object({
   body: z.object({
-    currentPassword: z.string().min(1),
-    newPassword: z.string().min(8)
+    currentPassword: z.string().min(1).max(128),
+    newPassword: z.string().min(8).max(128)
   }),
   params: z.object({}),
   query: z.object({})
 });
 
 const passwordResetRequestSchema = z.object({
-  body: z.object({ email: z.string().email() }),
+  body: z.object({ email: z.string().trim().email().max(254).transform((value) => value.toLowerCase()) }),
   params: z.object({}),
   query: z.object({})
 });
@@ -65,7 +72,7 @@ const passwordResetRequestSchema = z.object({
 const passwordResetSchema = z.object({
   body: z.object({
     token: z.string().min(20),
-    password: z.string().min(8)
+    password: z.string().min(8).max(128)
   }),
   params: z.object({}),
   query: z.object({})
@@ -73,7 +80,11 @@ const passwordResetSchema = z.object({
 
 function createToken(user) {
   return jwt.sign({ userId: user.id, role: user.role, tokenVersion: user.tokenVersion }, config.jwtSecret, {
-    expiresIn: config.jwtExpiresIn
+    algorithm: 'HS256',
+    expiresIn: config.jwtExpiresIn,
+    issuer: config.jwtIssuer,
+    audience: config.jwtAudience,
+    subject: String(user.id)
   });
 }
 
@@ -84,36 +95,99 @@ function hashToken(token) {
 function parseCookies(header) {
   return Object.fromEntries((header || '').split(';').filter(Boolean).map((part) => {
     const separator = part.indexOf('=');
-    return [part.slice(0, separator).trim(), decodeURIComponent(part.slice(separator + 1).trim())];
+    if (separator < 1) return ['', ''];
+    const key = part.slice(0, separator).trim();
+    try {
+      return [key, decodeURIComponent(part.slice(separator + 1).trim())];
+    } catch {
+      return [key, ''];
+    }
   }));
 }
 
+function durationToMs(value) {
+  const match = /^(\d+)(ms|s|m|h|d)$/i.exec(String(value || '').trim());
+  if (!match) throw new Error('REFRESH_TOKEN_EXPIRES_IN must use ms, s, m, h, or d');
+  const factors = { ms: 1, s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
+  const duration = Number(match[1]) * factors[match[2].toLowerCase()];
+  if (!Number.isSafeInteger(duration) || duration < 60_000) throw new Error('REFRESH_TOKEN_EXPIRES_IN must be at least one minute');
+  return duration;
+}
+
+function refreshCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: config.nodeEnv === 'production',
+    sameSite: config.refreshCookieSameSite,
+    path: '/api/auth',
+    maxAge: durationToMs(config.refreshTokenExpiresIn)
+  };
+}
+
 function setRefreshCookie(res, token) {
-  const maxAge = 7 * 24 * 60 * 60 * 1000;
-  res.setHeader('Set-Cookie', `${config.refreshCookieName}=${encodeURIComponent(token)}; Max-Age=${maxAge / 1000}; Path=/api/auth; HttpOnly; SameSite=Lax${config.nodeEnv === 'production' ? '; Secure' : ''}`);
+  res.cookie(config.refreshCookieName, token, refreshCookieOptions());
 }
 
 function clearRefreshCookie(res) {
-  res.setHeader('Set-Cookie', `${config.refreshCookieName}=; Max-Age=0; Path=/api/auth; HttpOnly; SameSite=Lax${config.nodeEnv === 'production' ? '; Secure' : ''}`);
+  const { maxAge, ...options } = refreshCookieOptions();
+  res.clearCookie(config.refreshCookieName, options);
 }
 
-async function createSession(user, res) {
+async function createSession(user, res, database = prisma) {
   const refreshToken = crypto.randomBytes(48).toString('base64url');
-  await prisma.refreshToken.create({
+  await database.refreshToken.create({
     data: {
       userId: user.id,
       tokenHash: hashToken(refreshToken),
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+      expiresAt: new Date(Date.now() + durationToMs(config.refreshTokenExpiresIn))
     }
   });
   setRefreshCookie(res, refreshToken);
   return createToken(user);
 }
 
+async function rotateRefreshToken(rawToken, database = prisma, now = new Date()) {
+  const tokenHash = hashToken(rawToken);
+  return database.$transaction(async (transaction) => {
+    const stored = await transaction.refreshToken.findUnique({ where: { tokenHash }, include: { user: true } });
+    if (!stored) return { status: 'invalid' };
+
+    if (stored.revokedAt) {
+      await transaction.refreshToken.updateMany({ where: { userId: stored.userId, revokedAt: null }, data: { revokedAt: now } });
+      await transaction.user.update({ where: { id: stored.userId }, data: { tokenVersion: { increment: 1 } } });
+      return { status: 'replay' };
+    }
+    if (stored.expiresAt <= now || stored.user.status !== 'ACTIVE') {
+      await transaction.refreshToken.updateMany({ where: { id: stored.id, revokedAt: null }, data: { revokedAt: now } });
+      return { status: 'invalid' };
+    }
+
+    const claimed = await transaction.refreshToken.updateMany({
+      where: { id: stored.id, revokedAt: null, expiresAt: { gt: now } },
+      data: { revokedAt: now }
+    });
+    if (claimed.count !== 1) {
+      await transaction.refreshToken.updateMany({ where: { userId: stored.userId, revokedAt: null }, data: { revokedAt: now } });
+      await transaction.user.update({ where: { id: stored.userId }, data: { tokenVersion: { increment: 1 } } });
+      return { status: 'replay' };
+    }
+
+    const nextToken = crypto.randomBytes(48).toString('base64url');
+    await transaction.refreshToken.create({
+      data: {
+        userId: stored.userId,
+        tokenHash: hashToken(nextToken),
+        expiresAt: new Date(now.getTime() + durationToMs(config.refreshTokenExpiresIn))
+      }
+    });
+    return { status: 'ok', user: stored.user, refreshToken: nextToken };
+  });
+}
+
 async function sendResetLink(email, token) {
-  const link = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password?token=${token}`;
+  const link = `${config.frontendUrl}/reset-password?token=${encodeURIComponent(token)}`;
   if (!config.smtp.host || !config.smtp.user || !config.smtp.password) {
-    console.info(`[password-reset] ${email}: ${link}`);
+    console.warn('[password-reset] SMTP is not configured; reset email was not sent.');
     return;
   }
   const transporter = nodemailer.createTransport({
@@ -179,17 +253,16 @@ router.post('/login', authRateLimit, validate(loginSchema), asyncHandler(async (
   res.json({ success: true, data: { user: publicUser(user), token } });
 }));
 
-router.post('/refresh', asyncHandler(async (req, res) => {
+router.post('/refresh', refreshRateLimit, asyncHandler(async (req, res) => {
   const rawToken = parseCookies(req.headers.cookie)[config.refreshCookieName];
   if (!rawToken) throw new ApiError(401, 'Refresh token không tồn tại');
-  const stored = await prisma.refreshToken.findUnique({ where: { tokenHash: hashToken(rawToken) }, include: { user: true } });
-  if (!stored || stored.revokedAt || stored.expiresAt <= new Date() || stored.user.status !== 'ACTIVE') {
+  const result = await rotateRefreshToken(rawToken);
+  if (result.status !== 'ok') {
     clearRefreshCookie(res);
     throw new ApiError(401, 'Refresh token không hợp lệ hoặc đã hết hạn');
   }
-  await prisma.refreshToken.update({ where: { id: stored.id }, data: { revokedAt: new Date() } });
-  const token = await createSession(stored.user, res);
-  res.json({ success: true, data: { user: publicUser(stored.user), token } });
+  setRefreshCookie(res, result.refreshToken);
+  res.json({ success: true, data: { user: publicUser(result.user), token: createToken(result.user) } });
 }));
 
 router.post('/password-reset/request', authRateLimit, validate(passwordResetRequestSchema), asyncHandler(async (req, res) => {
@@ -207,11 +280,7 @@ router.post('/password-reset/request', authRateLimit, validate(passwordResetRequ
     })
   ]);
   await sendResetLink(user.email, token);
-  res.json({
-    success: true,
-    message: 'Nếu email tồn tại, yêu cầu đặt lại mật khẩu đã được tạo',
-    ...(config.nodeEnv !== 'production' ? { data: { token } } : {})
-  });
+  res.json({ success: true, message: 'Nếu email tồn tại, yêu cầu đặt lại mật khẩu đã được tạo' });
 }));
 
 router.post('/password-reset/confirm', authRateLimit, validate(passwordResetSchema), asyncHandler(async (req, res) => {
@@ -222,8 +291,13 @@ router.post('/password-reset/confirm', authRateLimit, validate(passwordResetSche
   }
   const passwordHash = await bcrypt.hash(req.body.password, 12);
   await prisma.$transaction(async (transaction) => {
+    const claimed = await transaction.passwordResetToken.updateMany({
+      where: { id: resetToken.id, usedAt: null, expiresAt: { gt: new Date() } },
+      data: { usedAt: new Date() }
+    });
+    if (claimed.count !== 1) throw new ApiError(400, 'Token đặt lại mật khẩu không hợp lệ hoặc đã hết hạn');
     await transaction.user.update({ where: { id: resetToken.userId }, data: { passwordHash, tokenVersion: { increment: 1 } } });
-    await transaction.passwordResetToken.update({ where: { id: resetToken.id }, data: { usedAt: new Date() } });
+    await transaction.refreshToken.updateMany({ where: { userId: resetToken.userId, revokedAt: null }, data: { revokedAt: new Date() } });
   });
   res.json({ success: true, message: 'Đặt lại mật khẩu thành công' });
 }));
@@ -256,10 +330,11 @@ router.patch('/me/password', authenticate, validate(changePasswordSchema), async
     throw new ApiError(400, 'Mật khẩu hiện tại không đúng');
   }
   const passwordHash = await bcrypt.hash(req.body.newPassword, 12);
-  await prisma.user.update({
-    where: { id: req.user.id },
-    data: { passwordHash, tokenVersion: { increment: 1 } }
-  });
+  await prisma.$transaction([
+    prisma.user.update({ where: { id: req.user.id }, data: { passwordHash, tokenVersion: { increment: 1 } } }),
+    prisma.refreshToken.updateMany({ where: { userId: req.user.id, revokedAt: null }, data: { revokedAt: new Date() } })
+  ]);
+  clearRefreshCookie(res);
   res.json({ success: true, message: 'Đổi mật khẩu thành công, vui lòng đăng nhập lại' });
 }));
 
@@ -274,3 +349,6 @@ router.post('/logout', authenticate, asyncHandler(async (req, res) => {
 
 module.exports = router;
 module.exports.authRateLimit = authRateLimit;
+module.exports.durationToMs = durationToMs;
+module.exports.refreshCookieOptions = refreshCookieOptions;
+module.exports.rotateRefreshToken = rotateRefreshToken;

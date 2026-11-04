@@ -11,8 +11,19 @@
     "prisma:format": "prisma format",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate:status": "prisma migrate status",
     "db:seed": "node prisma/seed.js",
-    "test": "vitest run"
+    "db:seed:staging": "node prisma/seed-staging.js",
+    "worker:alerts:once": "node scripts/run-alert-worker-once.js",
+    "evaluate:matching": "node scripts/evaluate-matching.js",
+    "export:matching-labels": "node scripts/export-matching-labeling.js",
+    "prepare:matching-benchmark": "node scripts/prepare-matching-benchmark.js",
+    "test": "vitest run --configLoader native",
+    "test:unit": "vitest run --configLoader native tests/unit tests/matching.service.test.js tests/jobAlert.service.test.js",
+    "test:integration": "vitest run --configLoader native tests/integration tests/routes.test.js tests/security.test.js",
+    "test:coverage": "vitest run --configLoader native --coverage",
+    "test:watch": "vitest --configLoader native"
   },
   "dependencies": {
     "@prisma/client": "^6.7.0",
@@ -23,15 +34,19 @@
     "express-rate-limit": "^8.3.1",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
+    "mammoth": "^1.8.0",
     "morgan": "^1.10.0",
     "multer": "^2.5.0",
+    "node-cron": "^4.6.0",
     "nodemailer": "^7.0.6",
+    "pdf-parse": "^1.1.1",
     "zod": "^3.25.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.10",
     "prisma": "^6.7.0",
     "supertest": "^7.1.4",
-    "vitest": "^4.0.16"
+    "vitest": "^4.0.16",
+    "@vitest/coverage-v8": "^4.0.16"
   }
 }

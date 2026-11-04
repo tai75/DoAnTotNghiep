@@ -14,11 +14,20 @@ npm run db:seed
 npm run dev
 ```
 
+Luồng `db:migrate` ở trên chỉ dành cho database local trắng hoặc database phát triển cô lập
+được phép tạo migration mới. Repository hiện có 16 migration đã được kiểm kê và chuẩn hóa LF,
+nhưng migration chain canonical LF chưa được rehearsal lại trên MySQL trắng.
+
+Development database hiện có dữ liệu nhưng chưa có bảng `_prisma_migrations`. Không dùng
+`db:migrate`, `db:push`, `db:migrate:deploy` hoặc `migrate reset` trên database này để sửa
+migration history, và không tự baseline. Việc chuẩn hóa history chỉ được thực hiện theo kế
+hoạch database safety gate, sau backup/restore rehearsal và phê duyệt riêng.
+
 `JWT_SECRET`, `DATABASE_URL` là biến bắt buộc; server sẽ từ chối khởi động nếu thiếu.
 `CORS_ORIGINS` nhận nhiều origin, phân tách bằng dấu phẩy.
 Seed demo không chạy trong production và cần `ADMIN_SEED_PASSWORD`.
 
-Health check: `GET http://localhost:5000/api/health`
+Health checks: `GET /api/health/live` (process) và `GET /api/health/ready` (MySQL readiness).
 
 ## API hiện có
 
@@ -68,15 +77,24 @@ Health check: `GET http://localhost:5000/api/health`
 - `GET /api/admin/jobs` - admin xem và lọc tin tuyển dụng
 - `PATCH /api/admin/jobs/:id/moderation` - admin kiểm duyệt tin tuyển dụng
 
-Nếu chưa cấu hình `SMTP_HOST`, `SMTP_USER` và `SMTP_PASSWORD`, liên kết đặt lại mật khẩu
-được in ra console ở môi trường development. Frontend không lưu JWT vào localStorage;
+Nếu chưa cấu hình `SMTP_HOST`, `SMTP_USER` và `SMTP_PASSWORD`, email không được gửi và reset token
+không được in ra console. Frontend không lưu JWT vào localStorage;
 access token chỉ tồn tại trong bộ nhớ của tab, còn refresh token dùng cookie HttpOnly,
 SameSite và Secure ở production.
+
+## Staging
+
+Không dùng `db:push` hoặc `migrate dev` cho staging. Repository đã có baseline và đủ 16 migration
+canonical LF, nhưng chưa có bằng chứng blank-chain rehearsal sau bước chuẩn hóa LF; vì vậy staging
+chưa GO. Chỉ dùng `npm run db:migrate:deploy` sau khi chain canonical vượt qua rehearsal trên MySQL
+test cô lập và các safety gate được phê duyệt. File upload cần persistent volume qua
+`UPLOADS_DIRECTORY` và `LOGOS_DIRECTORY`. Tài khoản synthetic staging được chuẩn bị bằng
+`npm run db:seed:staging` với guardrail trong `.env.example`; không chạy seed nếu chưa xác nhận đúng database.
 
 ## Database
 
 - Schema nguồn: `prisma/schema.prisma`
-- Migration: `prisma/migrations/`
+- Migration: `prisma/migrations/` — 16 migration canonical LF đã được kiểm kê
 - Tạo database MySQL ban đầu: `database/init.sql`
 - Hướng dẫn: `database/README.md`
 

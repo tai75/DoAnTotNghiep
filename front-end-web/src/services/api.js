@@ -1,7 +1,18 @@
-const API_URL = 'http://localhost:5000/api'
+const API_URL = (import.meta.env.VITE_API_URL?.trim() || '/api').replace(/\/+$/, '')
+const MATCHING_V2_ENABLED = import.meta.env.VITE_MATCHING_V2_ENABLED === 'true'
 
 let unauthorizedHandler = null
 let accessToken = null
+let refreshPromise = null
+
+export class ApiError extends Error {
+  constructor(message, { status = 0, isNetworkError = false } = {}) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.isNetworkError = isNetworkError
+  }
+}
 
 export function setAccessToken(token) {
   accessToken = token
@@ -11,28 +22,75 @@ export function setUnauthorizedHandler(handler) {
   unauthorizedHandler = handler
 }
 
-export async function apiRequest(path, options = {}) {
+async function fetchFromApi(path, options = {}, token = accessToken) {
   const headers = new Headers(options.headers)
   if (!(options.body instanceof FormData)) headers.set('Content-Type', 'application/json')
-  if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
+  if (token) headers.set('Authorization', `Bearer ${token}`)
 
-  let response = await fetch(`${API_URL}${path}`, { ...options, headers, credentials: 'include' })
-  let finalResult = await response.json().catch(() => ({}))
-
-  if (response.status === 401 && path !== '/auth/refresh') {
-    const refreshed = await fetch(`${API_URL}/auth/refresh`, { method: 'POST', credentials: 'include' })
-    if (refreshed.ok) {
-      const refreshResult = await refreshed.json()
-      accessToken = refreshResult.data.token
-      headers.set('Authorization', `Bearer ${accessToken}`)
-      response = await fetch(`${API_URL}${path}`, { ...options, headers, credentials: 'include' })
-      finalResult = await response.json().catch(() => ({}))
-    } else {
-      unauthorizedHandler?.()
-    }
+  try {
+    return await fetch(`${API_URL}${path}`, { ...options, headers, credentials: 'include' })
+  } catch (error) {
+    if (error?.name === 'AbortError') throw error
+    throw new ApiError('Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối và thử lại.', { isNetworkError: true })
   }
-  if (!response.ok) throw new Error(finalResult.message || 'Không thể thực hiện yêu cầu')
-  return finalResult.data
+}
+
+async function readJson(response) {
+  if (response.status === 204) return {}
+  return response.json().catch(() => ({}))
+}
+
+function refreshAccessToken() {
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      const response = await fetchFromApi('/auth/refresh', { method: 'POST' }, null)
+      const result = await readJson(response)
+      if (!response.ok || !result.data?.token) {
+        if (response.status === 401 || response.status === 403) {
+          accessToken = null
+          unauthorizedHandler?.()
+        }
+        throw new ApiError(result.message || 'Phiên đăng nhập đã hết hạn.', { status: response.status })
+      }
+      accessToken = result.data.token
+      return accessToken
+    })().finally(() => {
+      refreshPromise = null
+    })
+  }
+  return refreshPromise
+}
+
+async function requestWithRefresh(path, options = {}) {
+  const requestToken = accessToken
+  let response = await fetchFromApi(path, options, requestToken)
+
+  if (response.status === 401 && requestToken && !path.startsWith('/auth/')) {
+    const token = requestToken === accessToken ? await refreshAccessToken() : accessToken
+    response = await fetchFromApi(path, options, token)
+  }
+  return response
+}
+
+export async function apiRequest(path, options = {}) {
+  const response = await requestWithRefresh(path, options)
+  const result = await readJson(response)
+  if (!response.ok) throw new ApiError(result.message || 'Không thể thực hiện yêu cầu.', { status: response.status })
+  return result.data
+}
+
+async function downloadFile(path, fileName) {
+  const response = await requestWithRefresh(path)
+  if (!response.ok) {
+    const result = await readJson(response)
+    throw new ApiError(result.message || 'Không thể tải CV.', { status: response.status })
+  }
+  const url = URL.createObjectURL(await response.blob())
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  link.click()
+  URL.revokeObjectURL(url)
 }
 
 export const authApi = {
@@ -51,10 +109,24 @@ export const jobsApi = {
     })
     return apiRequest(`/jobs?${query.toString()}`, { headers: {} })
   },
-  apply: (jobId, coverLetter, resumeId) => apiRequest(`/applications/jobs/${jobId}`, {
+  get: (id) => apiRequest(`/jobs/${id}`),
+  match: (id) => apiRequest(`/jobs/${id}/match`),
+  matchV2: (id) => MATCHING_V2_ENABLED
+    ? apiRequest(`/jobs/${id}/match/v2`)
+    : Promise.reject(new ApiError('Matching V2 legacy Ä‘Ã£ bá»‹ táº¯t.', { status: 410 })),
+  apply: (jobId, coverLetter, resumeId, answers = []) => apiRequest(`/applications/jobs/${jobId}`, {
     method: 'POST',
-    body: JSON.stringify({ coverLetter: coverLetter || undefined, resumeId })
-  })
+    body: JSON.stringify({ coverLetter: coverLetter || undefined, resumeId, answers })
+  }),
+  screeningQuestions: (id) => apiRequest(`/jobs/${id}/screening-questions`)
+}
+
+export const companiesApi = {
+  get: (id) => apiRequest(`/companies/${id}`),
+  following: (id) => apiRequest(`/companies/${id}/following`),
+  follow: (id) => apiRequest(`/companies/${id}/follow`, { method: 'POST' }),
+  unfollow: (id) => apiRequest(`/companies/${id}/follow`, { method: 'DELETE' }),
+  review: (id, payload) => apiRequest(`/companies/${id}/reviews`, { method: 'POST', body: JSON.stringify(payload) })
 }
 
 export const applicationsApi = {
@@ -71,8 +143,19 @@ export const notificationsApi = {
   markAllRead: () => apiRequest('/notifications/read-all', { method: 'PATCH' })
 }
 
+export const messagesApi = {
+  unreadCount: () => apiRequest('/conversations/unread-count'),
+  list: () => apiRequest('/conversations'),
+  createForApplication: (applicationId) => apiRequest(`/conversations/applications/${applicationId}`, { method: 'POST' }),
+  messages: (conversationId) => apiRequest(`/conversations/${conversationId}/messages`),
+  send: (conversationId, content) => apiRequest(`/conversations/${conversationId}/messages`, { method: 'POST', body: JSON.stringify({ content }) }),
+  markRead: (conversationId) => apiRequest(`/conversations/${conversationId}/read`, { method: 'PATCH' })
+}
+
 export const candidateApi = {
   profile: () => apiRequest('/candidates/me'),
+  completeness: () => apiRequest('/candidates/me/completeness'),
+  analyzeResumeForJob: (jobId) => apiRequest(`/candidates/me/job-analysis/${jobId}`, { method: 'POST' }),
   updateProfile: (payload) => apiRequest('/candidates/me', { method: 'PATCH', body: JSON.stringify(payload) }),
   skills: () => apiRequest('/candidates/skills'),
   updateSkills: (skillIds) => apiRequest('/candidates/me/skills', { method: 'PUT', body: JSON.stringify({ skillIds }) }),
@@ -88,22 +171,16 @@ export const candidateApi = {
   },
   renameResume: (id, fileName) => apiRequest(`/candidates/me/resumes/${id}`, { method: 'PATCH', body: JSON.stringify({ fileName }) }),
   setDefaultResume: (id) => apiRequest(`/candidates/me/resumes/${id}/default`, { method: 'PATCH' }),
+  importResume: (id) => apiRequest(`/candidates/me/resumes/${id}/import`, { method: 'POST' }),
+  confirmResumeImport: (id, payload) => apiRequest(`/candidates/me/resumes/${id}/import/confirm`, { method: 'POST', body: JSON.stringify(payload) }),
   savedJobs: () => apiRequest('/candidates/me/saved-jobs'),
   saveJob: (id) => apiRequest(`/candidates/me/saved-jobs/${id}`, { method: 'POST' }),
   unsaveJob: (id) => apiRequest(`/candidates/me/saved-jobs/${id}`, { method: 'DELETE' }),
-  downloadResume: async (id, fileName) => {
-    const response = await fetch(`${API_URL}/candidates/resumes/${id}/download`, {
-      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
-    })
-    if (!response.ok) throw new Error('Không thể tải CV')
-    const blob = await response.blob()
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = fileName
-    link.click()
-    URL.revokeObjectURL(url)
-  }
+  alerts: () => apiRequest('/candidates/me/alerts'),
+  createAlert: (payload) => apiRequest('/candidates/me/alerts', { method: 'POST', body: JSON.stringify(payload) }),
+  updateAlert: (id, payload) => apiRequest(`/candidates/me/alerts/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  deleteAlert: (id) => apiRequest(`/candidates/me/alerts/${id}`, { method: 'DELETE' }),
+  downloadResume: (id, fileName) => downloadFile(`/candidates/resumes/${id}/download`, fileName)
 }
 
 export const adminApi = {
@@ -119,6 +196,8 @@ export const adminApi = {
   user: (id) => apiRequest(`/admin/users/${id}`),
   auditLogs: (params = {}) => apiRequest(`/admin/audit-logs?${new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, value]) => value)))}`),
   moderateJob: (id, status, note) => apiRequest(`/admin/jobs/${id}/moderation`, { method: 'PATCH', body: JSON.stringify({ status, note: note || undefined }) }),
+  reviews: (status = 'PENDING') => apiRequest(`/admin/reviews?status=${status}`),
+  moderateReview: (id, status, note) => apiRequest(`/admin/reviews/${id}/moderation`, { method: 'PATCH', body: JSON.stringify({ status, note }) }),
   updateUserStatus: (id, status) => apiRequest(`/admin/users/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) })
 }
 
@@ -134,6 +213,8 @@ export const recruiterApi = {
   jobs: () => apiRequest('/jobs/me'),
   createJob: (payload) => apiRequest('/jobs', { method: 'POST', body: JSON.stringify(payload) }),
   updateJob: (id, payload) => apiRequest(`/jobs/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  submitJob: (id) => apiRequest(`/jobs/${id}/submit`, { method: 'POST' }),
+  suggestDescription: (payload) => apiRequest('/jobs/ai-description', { method: 'POST', body: JSON.stringify(payload) }),
   closeJob: (id) => apiRequest(`/jobs/${id}`, { method: 'DELETE' }),
   recommendations: (jobId, params = {}) => apiRequest(`/recommendations/jobs/${jobId}/candidates?${new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== '')))}`),
   skills: () => apiRequest('/candidates/skills'),
@@ -141,24 +222,22 @@ export const recruiterApi = {
     const query = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, value]) => value)))
     return apiRequest(`/applications/managed?${query}`)
   },
+  addApplicationNote: (id, content) => apiRequest(`/applications/${id}/notes`, { method: 'POST', body: JSON.stringify({ content }) }),
+  deleteApplicationNote: (id, noteId) => apiRequest(`/applications/${id}/notes/${noteId}`, { method: 'DELETE' }),
+  bulkRejectApplications: (applicationIds, message) => apiRequest('/applications/managed/bulk-reject', { method: 'POST', body: JSON.stringify({ applicationIds, message }) }),
+  talent: (params = {}) => apiRequest(`/recruiters/talent?${new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== '')))}`),
+  savedTalentSearches: () => apiRequest('/recruiters/talent/searches'),
+  saveTalentSearch: (name, filters) => apiRequest('/recruiters/talent/searches', { method: 'POST', body: JSON.stringify({ name, filters }) }),
+  deleteTalentSearch: (id) => apiRequest(`/recruiters/talent/searches/${id}`, { method: 'DELETE' }),
+  inviteCandidate: (candidateId, jobId, message) => apiRequest('/recruiters/talent/invite', { method: 'POST', body: JSON.stringify({ candidateId, jobId, message }) }),
+  funnel: (jobId) => apiRequest(`/recruiters/funnel/${jobId}`),
   application: (id) => apiRequest(`/applications/${id}`),
+  createConversation: (applicationId) => apiRequest(`/conversations/applications/${applicationId}`, { method: 'POST' }),
   updateApplicationStatus: (id, status, note) => apiRequest(`/applications/${id}/status`, {
     method: 'PATCH',
     body: JSON.stringify({ status, note: note || undefined })
   }),
-  downloadResume: async (id, fileName = 'CV-ung-vien') => {
-    const response = await fetch(`${API_URL}/candidates/resumes/${id}/download`, {
-      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
-    })
-    if (!response.ok) throw new Error('Không thể tải CV')
-    const blob = await response.blob()
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = fileName
-    link.click()
-    URL.revokeObjectURL(url)
-  }
+  downloadResume: (id, fileName = 'CV-ung-vien') => downloadFile(`/candidates/resumes/${id}/download`, fileName)
 }
 
 export const recommendationApi = {

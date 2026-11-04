@@ -1,0 +1,4 @@
+# Prisma migration checksums are byte-sensitive. Keep release artifacts
+# identical across Windows and Linux without renormalizing unrelated files.
+back-end/prisma/migrations/**/migration.sql text eol=lf
+back-end/prisma/migrations/migration_lock.toml text eol=lf

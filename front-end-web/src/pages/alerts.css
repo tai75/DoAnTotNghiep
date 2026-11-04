@@ -1,0 +1,22 @@
+.alerts-page { max-width: 1000px; margin: 0 auto; padding: 48px 24px; }
+.alerts-page .simple-page-header { align-items: flex-start; }
+.alerts-list { display: grid; gap: 14px; margin-top: 24px; }
+.alert-card, .alert-editor { padding: 22px; border: 1px solid var(--color-border); border-radius: 16px; background: var(--color-surface); }
+.alert-card { display: flex; justify-content: space-between; gap: 20px; align-items: center; }
+.alert-card.inactive { opacity: .65; }
+.alert-card h2, .alert-editor h2 { margin: 0 0 8px; }
+.alert-card p, .alert-card small { color: var(--color-muted); }
+.alert-actions, .alert-form-actions { display: flex; gap: 10px; align-items: center; }
+.alert-actions button { border: 0; background: none; color: var(--color-primary); cursor: pointer; }
+.alert-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.alert-form label { display: grid; gap: 6px; color: var(--color-muted); font-weight: 600; }
+.alert-form input, .alert-form select { padding: 10px 12px; border: 1px solid var(--color-border); border-radius: 8px; font: inherit; }
+.alert-form-actions { grid-column: 1 / -1; justify-content: flex-end; }
+@media (max-width: 650px) {
+  .alerts-page { padding-inline: 14px; }
+  .alert-card, .alerts-page .simple-page-header { align-items: stretch; display: grid; }
+  .alert-form { grid-template-columns: 1fr; }
+  .alert-actions, .alert-form-actions { flex-wrap: wrap; justify-content: flex-start; }
+  .alert-actions button, .alert-form-actions button, .alerts-page .simple-page-header > button { min-height: 44px; }
+  .alert-form-actions { grid-column: auto; }
+}

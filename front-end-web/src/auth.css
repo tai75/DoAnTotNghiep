@@ -103,4 +103,7 @@ button { cursor: pointer; }
   .auth-panel { padding-inline: 18px; }
   .mobile-brand { margin-bottom: 40px; }
   .auth-heading h2 { font-size: 30px; }
+  .form-meta { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .mode-switch button, .submit-button, .password-field button { min-height: 44px; }
+  .password-field button { right: 4px; }
 }
