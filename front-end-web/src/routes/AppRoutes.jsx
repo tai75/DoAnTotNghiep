@@ -5,6 +5,7 @@ import LoadingScreen from '../components/LoadingScreen'
 import RouteErrorBoundary from '../components/RouteErrorBoundary'
 
 const AuthPage = lazy(() => import('../pages/AuthPage'))
+const PasswordRecoveryPage = lazy(() => import('../pages/PasswordRecoveryPage'))
 const JobBoardPage = lazy(() => import('../pages/JobBoardPage'))
 const CompanyPage = lazy(() => import('../pages/CompanyPage'))
 const AdminDashboardPage = lazy(() => import('../pages/AdminDashboardPage'))
@@ -45,6 +46,8 @@ export default function AppRoutes() {
   return <RouteErrorBoundary><Suspense fallback={<LoadingScreen />}><Routes>
     <Route path="/login" element={<GuestRoute />} />
     <Route path="/register" element={<GuestRoute />} />
+    <Route path="/forgot-password" element={<PasswordRecoveryPage />} />
+    <Route path="/reset-password" element={<PasswordRecoveryPage />} />
     <Route path="/admin/*" element={<RoleGuard roles={['ADMIN']}><AdminDashboardPage /></RoleGuard>} />
     <Route path="/recruiter/talent" element={<RoleGuard roles={['RECRUITER']}><RecruiterTalentPage /></RoleGuard>} />
     <Route path="/recruiter/*" element={<RoleGuard roles={['RECRUITER']}><RecruiterDashboardPage /></RoleGuard>} />

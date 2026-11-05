@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 process.env.DATABASE_URL = 'mysql://test:test@127.0.0.1:3306/job_connect_test'
 process.env.JWT_SECRET = 'alert-worker-test-secret'
@@ -6,44 +6,26 @@ process.env.NODE_ENV = 'test'
 process.env.FRONTEND_URL = 'http://localhost:5173'
 process.env.API_PUBLIC_URL = 'http://localhost:5000'
 
-const mocks = vi.hoisted(() => ({
-  prisma: {
-    jobAlert: { findMany: vi.fn(), update: vi.fn() },
-    job: { findMany: vi.fn() },
-    notification: { create: vi.fn() }
-  },
-  sendEmail: vi.fn()
-}))
-
-globalThis.__JOB_CONNECT_TEST_PRISMA__ = mocks.prisma
-globalThis.__JOB_CONNECT_TEST_SEND_EMAIL__ = mocks.sendEmail
-
 const workerModule = await import('../../src/jobs/alertWorker.js')
-const { runAlertWorker } = workerModule.default || workerModule
+const { buildEventKey, classifyEmailError, nextRetryAt } = workerModule.default || workerModule
 
-describe('job alert worker integration', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mocks.prisma.jobAlert.update.mockResolvedValue({})
-    mocks.prisma.notification.create.mockResolvedValue({})
-    mocks.sendEmail.mockResolvedValue(undefined)
+describe('job alert worker durability helpers', () => {
+  it('builds a stable event identity independent of job order', () => {
+    expect(buildEventKey(7, [9, 3, 5])).toBe(buildEventKey(7, [5, 9, 3]))
+    expect(buildEventKey(7, [3])).not.toBe(buildEventKey(7, [3, 5]))
   })
 
-  it('persists a notification, sends one mocked email, and advances lastSentAt for matching jobs', async () => {
-    const now = new Date('2026-11-03T03:00:00.000Z')
-    mocks.prisma.jobAlert.findMany.mockResolvedValue([{
-      id: 1, name: 'Backend', keyword: 'node', location: 'Da Nang', employmentType: 'FULL_TIME',
-      minSalary: 1000, skillIds: [7], frequency: 'DAILY', isActive: true, lastSentAt: null,
-      candidate: { userId: 9, user: { id: 9, email: 'candidate@example.test' } }
-    }])
-    mocks.prisma.job.findMany.mockResolvedValue([
-      { id: 20, title: 'Node Backend Engineer', description: 'APIs', location: 'Da Nang', employmentType: 'FULL_TIME', maxSalary: 2000, company: { name: 'Acme' }, skills: [{ skillId: 7 }] },
-      { id: 21, title: 'Designer', description: 'Figma', location: 'Da Nang', employmentType: 'FULL_TIME', maxSalary: 2000, company: { name: 'Other' }, skills: [{ skillId: 7 }] }
-    ])
+  it('classifies transient, permanent and unknown email outcomes', () => {
+    expect(classifyEmailError({ code: 'EAI_AGAIN' })).toMatchObject({ kind: 'transient' })
+    expect(classifyEmailError({ responseCode: 550 })).toMatchObject({ kind: 'permanent' })
+    expect(classifyEmailError({ code: 'EMAIL_PROVIDER_REJECTED' })).toMatchObject({ kind: 'permanent' })
+    expect(classifyEmailError({ code: 'ETIMEDOUT' })).toMatchObject({ kind: 'unknown' })
+  })
 
-    await expect(runAlertWorker(now)).resolves.toBe(1)
-    expect(mocks.prisma.notification.create).toHaveBeenCalledOnce()
-    expect(mocks.sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: 'candidate@example.test' }))
-    expect(mocks.prisma.jobAlert.update).toHaveBeenCalledWith({ where: { id: 1 }, data: { lastSentAt: now } })
+  it('uses bounded exponential retry delays', () => {
+    const now = new Date('2026-11-05T00:00:00.000Z')
+    expect(nextRetryAt(now, 1).getTime() - now.getTime()).toBe(60_000)
+    expect(nextRetryAt(now, 3).getTime() - now.getTime()).toBe(240_000)
+    expect(nextRetryAt(now, 99).getTime() - now.getTime()).toBe(3_600_000)
   })
 })

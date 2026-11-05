@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/auth'
 
 const ASSET_URL = (import.meta.env.VITE_ASSET_URL || '').replace(/\/$/, '')
@@ -66,7 +66,7 @@ export default function AuthPage() {
             <label>Mật khẩu<div className="password-field"><input type={showPassword ? 'text' : 'password'} name="password" value={form.password} onChange={updateField} placeholder="Tối thiểu 8 ký tự" minLength="8" required /><button type="button" onClick={() => setShowPassword((value) => !value)}>{showPassword ? 'Ẩn' : 'Hiện'}</button></div></label>
             {isRegister && <label className="select-label">Bạn là<select name="role" value={form.role} onChange={updateField}><option value="CANDIDATE">Ứng viên</option><option value="RECRUITER">Nhà tuyển dụng</option></select></label>}
             {isRegister && form.role === 'RECRUITER' && <label>Tên công ty<input name="companyName" value={form.companyName} onChange={updateField} placeholder="Tên công ty của bạn" required /></label>}
-            {!isRegister && <div className="form-meta"><label className="remember"><input type="checkbox" /> <span>Ghi nhớ đăng nhập</span></label><button type="button" className="text-button">Quên mật khẩu?</button></div>}
+            {!isRegister && <div className="form-meta"><label className="remember"><input type="checkbox" /> <span>Ghi nhớ đăng nhập</span></label><Link className="text-button" to="/forgot-password">Quên mật khẩu?</Link></div>}
             {message && <div className={`form-message ${message.type}`} role="alert">{message.text}</div>}
             <button className="submit-button" type="submit" disabled={isLoading}>{isLoading ? 'Đang xử lý...' : isRegister ? 'Tạo tài khoản' : 'Đăng nhập'}<span aria-hidden="true">→</span></button>
           </form>

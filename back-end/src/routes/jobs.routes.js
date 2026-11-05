@@ -9,6 +9,7 @@ const { explainMatch } = require('../services/llm.service');
 const { generateJobDescription } = require('../services/llm.service');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
+const { createJobAtomic, updateJobAtomic } = require('../services/jobWrite.service');
 
 const employmentTypes = ['FULL_TIME', 'PART_TIME', 'INTERNSHIP', 'CONTRACT', 'REMOTE', 'HYBRID'];
 const employmentTypeSchema = z.enum(employmentTypes);
@@ -303,16 +304,13 @@ router.post('/', authenticate, authorize('RECRUITER'), validate(jobSchema), asyn
   const recruiter = await prisma.recruiter.findUnique({ where: { userId: req.user.id } });
   if (!recruiter) throw new ApiError(403, 'Tài khoản chưa được liên kết với nhà tuyển dụng');
   const { skillIds, screeningQuestions, status, requiredSkills, ...jobData } = req.body;
-  const job = await prisma.job.create({
-    data: {
-      ...jobData,
-      companyId: recruiter.companyId,
-      status: status || 'PENDING',
-      skills: { create: skillIds.map((skillId) => ({ isRequired: requiredSkills ? requiredSkills.includes(skillId) : true, skill: { connect: { id: skillId } } })) }
-    },
-    include: { company: true, skills: { include: { skill: true } } }
+  const job = await createJobAtomic(prisma, {
+    companyId: recruiter.companyId,
+    jobData: { ...jobData, status: status || 'PENDING' },
+    skillIds,
+    requiredSkills,
+    screeningQuestions,
   });
-  if (screeningQuestions.length) await prisma.jobScreeningQuestion.createMany({ data: screeningQuestions.map(({ id, ...question }) => ({ ...question, jobId: job.id, options: question.options || undefined })) });
   if (job.status === 'PUBLISHED') {
     const followers = await prisma.companyFollow.findMany({ where: { companyId: job.companyId }, select: { candidate: { select: { userId: true } } } });
     if (followers.length) await prisma.notification.createMany({ data: followers.map(({ candidate }) => ({ userId: candidate.userId, type: 'NEW_COMPANY_JOB', title: 'Công ty bạn theo dõi có việc mới', content: `${job.title} đang tuyển dụng tại công ty bạn theo dõi.`, link: `/jobs/${job.id}` })) });
@@ -328,18 +326,13 @@ router.patch('/:id', authenticate, authorize('RECRUITER'), validate(jobUpdateSch
   if (job.companyId !== recruiter.companyId) throw new ApiError(403, 'Bạn không quản lý việc làm này');
 
   const { skillIds, screeningQuestions, status, requiredSkills, ...jobData } = req.body;
-  const updated = await prisma.job.update({
-    where: { id: job.id },
-    data: {
-      ...jobData,
-      ...(skillIds ? { skills: { deleteMany: {}, create: skillIds.map((skillId) => ({ isRequired: requiredSkills ? requiredSkills.includes(skillId) : true, skill: { connect: { id: skillId } } })) } } : {})
-    },
-    include: { company: true, skills: { include: { skill: true } } }
+  const updated = await updateJobAtomic(prisma, {
+    jobId: job.id,
+    jobData,
+    skillIds,
+    requiredSkills,
+    screeningQuestions,
   });
-  if (screeningQuestions) {
-    await prisma.jobScreeningQuestion.deleteMany({ where: { jobId: job.id } });
-    if (screeningQuestions.length) await prisma.jobScreeningQuestion.createMany({ data: screeningQuestions.map(({ id, ...question }) => ({ ...question, jobId: job.id, options: question.options || undefined })) });
-  }
   res.json({ success: true, data: updated });
 }));
 

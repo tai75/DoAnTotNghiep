@@ -91,6 +91,21 @@ enum JobAlertFrequency {
   WEEKLY
 }
 
+enum JobAlertEventStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum AlertDeliveryStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+  UNKNOWN
+}
+
 model User {
   id                    Int                    @id @default(autoincrement())
   email                 String                 @unique @db.VarChar(191)
@@ -229,6 +244,7 @@ model Job {
   recommendations         Recommendation[]
   views                   JobView[]
   talentInvitations       TalentInvitation[]
+  alertEventJobs          JobAlertEventJob[]
 
   @@index([status])
   @@index([createdAt])
@@ -427,38 +443,86 @@ model SavedJob {
 }
 
 model Notification {
-  id        Int      @id @default(autoincrement())
-  userId    Int      @map("user_id")
-  type      String   @db.VarChar(80)
-  title     String   @db.VarChar(180)
-  content   String   @db.Text
-  link      String?  @db.VarChar(500)
-  isRead    Boolean  @default(false) @map("is_read")
-  createdAt DateTime @default(now()) @map("created_at")
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id            Int            @id @default(autoincrement())
+  userId        Int            @map("user_id")
+  type          String         @db.VarChar(80)
+  title         String         @db.VarChar(180)
+  content       String         @db.Text
+  link          String?        @db.VarChar(500)
+  isRead        Boolean        @default(false) @map("is_read")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobAlertEvent JobAlertEvent?
 
   @@index([userId, isRead, createdAt])
   @@map("notifications")
 }
 
 model JobAlert {
-  id             Int               @id @default(autoincrement())
-  candidateId    Int               @map("candidate_id")
-  name           String            @db.VarChar(150)
-  keyword        String?           @db.VarChar(180)
-  location       String?           @db.VarChar(150)
-  employmentType EmploymentType?   @map("employment_type")
-  minSalary      Decimal?          @map("min_salary") @db.Decimal(15, 2)
-  skillIds       Json              @map("skill_ids")
-  frequency      JobAlertFrequency @default(DAILY)
-  isActive       Boolean           @default(true) @map("is_active")
-  lastSentAt     DateTime?         @map("last_sent_at")
-  createdAt      DateTime          @default(now()) @map("created_at")
-  updatedAt      DateTime          @updatedAt @map("updated_at")
-  candidate      Candidate         @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  id             Int                @id @default(autoincrement())
+  candidateId    Int                @map("candidate_id")
+  name           String             @db.VarChar(150)
+  keyword        String?            @db.VarChar(180)
+  location       String?            @db.VarChar(150)
+  employmentType EmploymentType?    @map("employment_type")
+  minSalary      Decimal?           @map("min_salary") @db.Decimal(15, 2)
+  skillIds       Json               @map("skill_ids")
+  frequency      JobAlertFrequency  @default(DAILY)
+  isActive       Boolean            @default(true) @map("is_active")
+  lastSentAt     DateTime?          @map("last_sent_at")
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+  candidate      Candidate          @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  events         JobAlertEvent[]
+  eventJobs      JobAlertEventJob[]
 
   @@index([candidateId, isActive])
   @@map("job_alerts")
+}
+
+model JobAlertEvent {
+  id                Int                 @id @default(autoincrement())
+  alertId           Int                 @map("alert_id")
+  eventKey          String              @unique @map("event_key") @db.Char(64)
+  windowStart       DateTime            @map("window_start")
+  windowEnd         DateTime            @map("window_end")
+  status            JobAlertEventStatus @default(PENDING)
+  leaseOwner        String?             @map("lease_owner") @db.VarChar(100)
+  leaseExpiresAt    DateTime?           @map("lease_expires_at")
+  retryCount        Int                 @default(0) @map("retry_count")
+  nextRetryAt       DateTime?           @map("next_retry_at")
+  inAppStatus       AlertDeliveryStatus @default(PENDING) @map("in_app_status")
+  emailStatus       AlertDeliveryStatus @default(PENDING) @map("email_status")
+  notificationId    Int?                @unique @map("notification_id")
+  providerMessageId String?             @map("provider_message_id") @db.VarChar(255)
+  providerResponse  Json?               @map("provider_response")
+  lastErrorCode     String?             @map("last_error_code") @db.VarChar(100)
+  completedAt       DateTime?           @map("completed_at")
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+  alert             JobAlert            @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  notification      Notification?       @relation(fields: [notificationId], references: [id], onDelete: SetNull)
+  jobs              JobAlertEventJob[]
+
+  @@unique([alertId, windowStart, windowEnd])
+  @@index([status, nextRetryAt])
+  @@index([emailStatus, nextRetryAt, leaseExpiresAt])
+  @@index([leaseExpiresAt])
+  @@map("job_alert_events")
+}
+
+model JobAlertEventJob {
+  eventId Int           @map("event_id")
+  alertId Int           @map("alert_id")
+  jobId   Int           @map("job_id")
+  event   JobAlertEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  alert   JobAlert      @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  job     Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, jobId])
+  @@unique([alertId, jobId])
+  @@index([jobId])
+  @@map("job_alert_event_jobs")
 }
 
 model RecruiterSavedSearch {

@@ -98,7 +98,9 @@ export const authApi = {
   register: (payload) => apiRequest('/auth/register', { method: 'POST', body: JSON.stringify(payload) }),
   me: () => apiRequest('/auth/me'),
   refresh: () => apiRequest('/auth/refresh', { method: 'POST' }),
-  logout: () => apiRequest('/auth/logout', { method: 'POST' })
+  logout: () => apiRequest('/auth/logout', { method: 'POST' }),
+  requestPasswordReset: (email) => apiRequest('/auth/password-reset/request', { method: 'POST', body: JSON.stringify({ email }) }),
+  confirmPasswordReset: (token, password) => apiRequest('/auth/password-reset/confirm', { method: 'POST', body: JSON.stringify({ token, password }) })
 }
 
 export const jobsApi = {

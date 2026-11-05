@@ -194,6 +194,18 @@ describe('route validation and authentication safeguards', () => {
     expect(responses[10].status).toBe(429)
   })
 
+  it('uses a stricter limiter for password reset requests', async () => {
+    const limiterApp = express()
+    limiterApp.use(express.json())
+    limiterApp.post('/', authRoutes.passwordResetRequestRateLimit, (req, res) => res.json({ success: true }))
+
+    const responses = []
+    for (let index = 0; index < 6; index += 1) responses.push(await request(limiterApp).post('/').send({}))
+
+    expect(responses.slice(0, 5).every((response) => response.status === 200)).toBe(true)
+    expect(responses[5].status).toBe(429)
+  })
+
   it('validates resume signatures and published saved jobs', () => {
     const filePath = path.join(os.tmpdir(), `job-connect-signature-${process.pid}.tmp`)
     try {

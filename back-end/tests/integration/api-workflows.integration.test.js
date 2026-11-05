@@ -2,6 +2,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import jwt from 'jsonwebtoken'
+import crypto from 'node:crypto'
+import bcrypt from 'bcryptjs'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import request from 'supertest'
 
@@ -28,7 +30,7 @@ const database = vi.hoisted(() => {
     Object.fromEntries(methodNames.map((method) => [method, vi.fn()]))
   ]))
   prisma.$transaction = vi.fn()
-  return { prisma, state: { users: [], refreshTokens: [], nextUserId: 10, nextRefreshId: 1 } }
+  return { prisma, state: { users: [], refreshTokens: [], resetTokens: [], nextUserId: 10, nextRefreshId: 1, nextResetId: 1 } }
 })
 
 const mail = vi.hoisted(() => ({ sendEmail: vi.fn() }))
@@ -66,8 +68,10 @@ function resetDatabase() {
     { id: 4, email: 'other@example.test', fullName: 'Other candidate', role: 'CANDIDATE', status: 'ACTIVE', tokenVersion: 0 }
   ]
   state.refreshTokens = []
+  state.resetTokens = []
   state.nextUserId = 10
   state.nextRefreshId = 1
+  state.nextResetId = 1
 
   prisma.user.findUnique.mockImplementation(async ({ where }) => state.users.find((user) =>
     (where.id !== undefined && user.id === where.id) || (where.email !== undefined && user.email === where.email)
@@ -111,6 +115,22 @@ function resetDatabase() {
     matches.forEach((entry) => Object.assign(entry, data))
     return { count: matches.length }
   })
+  prisma.passwordResetToken.findUnique.mockImplementation(async ({ where }) => state.resetTokens.find((entry) => entry.tokenHash === where.tokenHash) || null)
+  prisma.passwordResetToken.create.mockImplementation(async ({ data }) => {
+    const item = { id: state.nextResetId++, usedAt: null, ...data }
+    state.resetTokens.push(item)
+    return item
+  })
+  prisma.passwordResetToken.updateMany.mockImplementation(async ({ where, data }) => {
+    const matches = state.resetTokens.filter((entry) =>
+      (where.id === undefined || entry.id === where.id) &&
+      (where.userId === undefined || entry.userId === where.userId) &&
+      (where.usedAt === undefined || entry.usedAt === where.usedAt) &&
+      (!where.expiresAt?.gt || entry.expiresAt > where.expiresAt.gt)
+    )
+    matches.forEach((entry) => Object.assign(entry, data))
+    return { count: matches.length }
+  })
   prisma.$transaction.mockImplementation(async (work) => Array.isArray(work) ? Promise.all(work) : work(prisma))
 }
 
@@ -145,6 +165,59 @@ describe('authentication integration workflow', () => {
     const rejected = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${refresh.body.data.token}`)
     expect(rejected.status).toBe(401)
   }, 15_000)
+})
+
+describe('password recovery security workflow', () => {
+  it('does not enumerate accounts and enforces expiry, single use, password replacement, and session revocation', async () => {
+    const user = database.state.users[0]
+    user.passwordHash = await bcrypt.hash('OldPassword123!', 4)
+    database.state.refreshTokens.push({ id: 99, userId: user.id, tokenHash: 'old-session', expiresAt: new Date(Date.now() + 60_000), revokedAt: null })
+
+    const existing = await request(app).post('/api/auth/password-reset/request').send({ email: user.email })
+    const unknown = await request(app).post('/api/auth/password-reset/request').send({ email: 'missing@example.test' })
+    expect(existing.status).toBe(200)
+    expect(unknown.status).toBe(200)
+    expect(existing.body).toEqual(unknown.body)
+    expect(mail.sendEmail).toHaveBeenCalledOnce()
+    expect(database.state.resetTokens).toHaveLength(1)
+    expect(database.state.resetTokens[0].tokenHash).toMatch(/^[a-f0-9]{64}$/)
+
+    const resetText = mail.sendEmail.mock.calls[0][0].text
+    const rawToken = decodeURIComponent(new URL(resetText.match(/https?:\/\/\S+/)[0]).searchParams.get('token'))
+    expect(resetText).not.toContain(database.state.resetTokens[0].tokenHash)
+
+    const confirmed = await request(app).post('/api/auth/password-reset/confirm').send({ token: rawToken, password: 'NewPassword123!' })
+    const replay = await request(app).post('/api/auth/password-reset/confirm').send({ token: rawToken, password: 'AnotherPassword123!' })
+    expect(confirmed.status).toBe(200)
+    expect(replay.status).toBe(400)
+    expect(database.state.resetTokens[0].usedAt).toBeInstanceOf(Date)
+    expect(database.state.refreshTokens[0].revokedAt).toBeInstanceOf(Date)
+    expect(user.tokenVersion).toBe(1)
+
+    const expiredRaw = 'expired-reset-token-value-1234567890'
+    database.state.resetTokens.push({ id: 100, userId: user.id, tokenHash: crypto.createHash('sha256').update(expiredRaw).digest('hex'), expiresAt: new Date(Date.now() - 1_000), usedAt: null })
+    expect((await request(app).post('/api/auth/password-reset/confirm').send({ token: expiredRaw, password: 'UnusedPassword123!' })).status).toBe(400)
+    expect((await request(app).post('/api/auth/password-reset/confirm').send({ token: 'invalid-reset-token-value-123456789', password: 'UnusedPassword123!' })).status).toBe(400)
+
+    expect((await request(app).post('/api/auth/login').send({ email: user.email, password: 'OldPassword123!' })).status).toBe(401)
+    expect((await request(app).post('/api/auth/login').send({ email: user.email, password: 'NewPassword123!' })).status).toBe(200)
+  })
+
+  it('keeps the generic response when email delivery fails and does not log account or token data', async () => {
+    const user = database.state.users[0]
+    mail.sendEmail.mockRejectedValueOnce(new Error('controlled SMTP failure'))
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const response = await request(app).post('/api/auth/password-reset/request').send({ email: user.email })
+      expect(response.status).toBe(200)
+      expect(response.body.message).toContain('Nếu email tồn tại')
+      expect(errorLog).toHaveBeenCalledWith('[password-reset-email]', { name: 'Error' })
+      expect(JSON.stringify(errorLog.mock.calls)).not.toContain(user.email)
+      expect(JSON.stringify(errorLog.mock.calls)).not.toContain(database.state.resetTokens[0].tokenHash)
+    } finally {
+      errorLog.mockRestore()
+    }
+  })
 })
 
 describe('RBAC integration', () => {
@@ -328,6 +401,76 @@ describe('public job and company detail regressions', () => {
 })
 
 describe('application and ownership workflows', () => {
+  it('creates a job with skills and screening questions in one transaction', async () => {
+    const recruiterUser = database.state.users[1]
+    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 6, userId: recruiterUser.id, companyId: 100 })
+    database.prisma.job.create.mockResolvedValue({ id: 21, companyId: 100, title: 'Atomic job', status: 'DRAFT', company: {}, skills: [] })
+    database.prisma.jobScreeningQuestion.createMany.mockResolvedValue({ count: 1 })
+
+    const response = await request(app).post('/api/jobs')
+      .set('Authorization', `Bearer ${tokenFor(recruiterUser)}`)
+      .send({
+        title: 'Atomic job', description: 'A sufficiently detailed atomic job description.', status: 'DRAFT',
+        skillIds: [1, 2], requiredSkills: [1],
+        screeningQuestions: [{ type: 'TEXT', question: 'Why this role?', isRequired: true }]
+      })
+
+    expect(response.status).toBe(201)
+    expect(database.prisma.$transaction).toHaveBeenCalledOnce()
+    expect(database.prisma.job.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ companyId: 100, skills: { create: expect.arrayContaining([
+        expect.objectContaining({ isRequired: true }), expect.objectContaining({ isRequired: false })
+      ]) } })
+    }))
+    expect(database.prisma.jobScreeningQuestion.createMany).toHaveBeenCalledOnce()
+  })
+
+  it('updates job fields, replaces skills and replaces questions in one transaction', async () => {
+    const recruiterUser = database.state.users[1]
+    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 6, userId: recruiterUser.id, companyId: 100 })
+    database.prisma.job.findUnique.mockResolvedValue({ id: 22, companyId: 100, status: 'DRAFT' })
+    database.prisma.job.update.mockResolvedValue({ id: 22, companyId: 100, title: 'Updated atomic job', status: 'DRAFT', company: {}, skills: [] })
+    database.prisma.jobScreeningQuestion.deleteMany.mockResolvedValue({ count: 1 })
+    database.prisma.jobScreeningQuestion.createMany.mockResolvedValue({ count: 1 })
+
+    const response = await request(app).patch('/api/jobs/22')
+      .set('Authorization', `Bearer ${tokenFor(recruiterUser)}`)
+      .send({ title: 'Updated atomic job', skillIds: [2], screeningQuestions: [{ type: 'YES_NO', question: 'Available now?' }] })
+
+    expect(response.status).toBe(200)
+    expect(database.prisma.$transaction).toHaveBeenCalledOnce()
+    expect(database.prisma.job.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ skills: expect.objectContaining({ deleteMany: {}, create: expect.any(Array) }) })
+    }))
+    expect(database.prisma.jobScreeningQuestion.deleteMany).toHaveBeenCalledWith({ where: { jobId: 22 } })
+    expect(database.prisma.jobScreeningQuestion.createMany).toHaveBeenCalledOnce()
+  })
+
+  it('validates before write and propagates required-skill or question write failures', async () => {
+    const recruiterUser = database.state.users[1]
+    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 6, userId: recruiterUser.id, companyId: 100 })
+    const authorization = `Bearer ${tokenFor(recruiterUser)}`
+
+    const invalid = await request(app).post('/api/jobs').set('Authorization', authorization).send({ title: 'x', description: 'short' })
+    expect(invalid.status).toBe(400)
+    expect(database.prisma.$transaction).not.toHaveBeenCalled()
+
+    database.prisma.job.create.mockRejectedValueOnce(new Error('injected required skill failure'))
+    const skillFailure = await request(app).post('/api/jobs').set('Authorization', authorization).send({
+      title: 'Skill failure', description: 'A sufficiently detailed job description.', skillIds: [999999]
+    })
+    expect(skillFailure.status).toBe(500)
+    expect(database.prisma.jobScreeningQuestion.createMany).not.toHaveBeenCalled()
+
+    database.prisma.job.create.mockResolvedValueOnce({ id: 23, companyId: 100, title: 'Question failure', status: 'PENDING', company: {}, skills: [] })
+    database.prisma.jobScreeningQuestion.createMany.mockRejectedValueOnce(new Error('injected screening question failure'))
+    const questionFailure = await request(app).post('/api/jobs').set('Authorization', authorization).send({
+      title: 'Question failure', description: 'A sufficiently detailed job description.',
+      screeningQuestions: [{ type: 'TEXT', question: 'Trigger controlled failure' }]
+    })
+    expect(questionFailure.status).toBe(500)
+  })
+
   it('creates one application, rejects a duplicate, and lets its candidate withdraw it', async () => {
     const candidateUser = database.state.users[0]
     const candidate = { id: 11, userId: candidateUser.id, skills: [{ skill: { id: 1, name: 'Node.js' } }] }

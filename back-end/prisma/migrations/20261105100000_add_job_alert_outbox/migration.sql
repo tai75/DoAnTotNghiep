@@ -1,0 +1,42 @@
+CREATE TABLE `job_alert_events` (
+  `id` INTEGER NOT NULL AUTO_INCREMENT,
+  `alert_id` INTEGER NOT NULL,
+  `event_key` CHAR(64) NOT NULL,
+  `window_start` DATETIME(3) NOT NULL,
+  `window_end` DATETIME(3) NOT NULL,
+  `status` ENUM('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED') NOT NULL DEFAULT 'PENDING',
+  `lease_owner` VARCHAR(100) NULL,
+  `lease_expires_at` DATETIME(3) NULL,
+  `retry_count` INTEGER NOT NULL DEFAULT 0,
+  `next_retry_at` DATETIME(3) NULL,
+  `in_app_status` ENUM('PENDING', 'PROCESSING', 'SENT', 'FAILED', 'UNKNOWN') NOT NULL DEFAULT 'PENDING',
+  `email_status` ENUM('PENDING', 'PROCESSING', 'SENT', 'FAILED', 'UNKNOWN') NOT NULL DEFAULT 'PENDING',
+  `notification_id` INTEGER NULL,
+  `provider_message_id` VARCHAR(255) NULL,
+  `provider_response` JSON NULL,
+  `last_error_code` VARCHAR(100) NULL,
+  `completed_at` DATETIME(3) NULL,
+  `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updated_at` DATETIME(3) NOT NULL,
+  UNIQUE INDEX `job_alert_events_event_key_key` (`event_key`),
+  UNIQUE INDEX `job_alert_events_notification_id_key` (`notification_id`),
+  UNIQUE INDEX `job_alert_events_alert_id_window_start_window_end_key` (`alert_id`, `window_start`, `window_end`),
+  INDEX `job_alert_events_status_next_retry_at_idx` (`status`, `next_retry_at`),
+  INDEX `job_alert_events_email_status_next_retry_at_lease_expires_at_idx` (`email_status`, `next_retry_at`, `lease_expires_at`),
+  INDEX `job_alert_events_lease_expires_at_idx` (`lease_expires_at`),
+  PRIMARY KEY (`id`),
+  CONSTRAINT `job_alert_events_alert_id_fkey` FOREIGN KEY (`alert_id`) REFERENCES `job_alerts` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `job_alert_events_notification_id_fkey` FOREIGN KEY (`notification_id`) REFERENCES `notifications` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE `job_alert_event_jobs` (
+  `event_id` INTEGER NOT NULL,
+  `alert_id` INTEGER NOT NULL,
+  `job_id` INTEGER NOT NULL,
+  UNIQUE INDEX `job_alert_event_jobs_alert_id_job_id_key` (`alert_id`, `job_id`),
+  INDEX `job_alert_event_jobs_job_id_idx` (`job_id`),
+  PRIMARY KEY (`event_id`, `job_id`),
+  CONSTRAINT `job_alert_event_jobs_event_id_fkey` FOREIGN KEY (`event_id`) REFERENCES `job_alert_events` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `job_alert_event_jobs_alert_id_fkey` FOREIGN KEY (`alert_id`) REFERENCES `job_alerts` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `job_alert_event_jobs_job_id_fkey` FOREIGN KEY (`job_id`) REFERENCES `jobs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

@@ -1,0 +1,148 @@
+import { expect, request, test } from '@playwright/test'
+
+const apiBase = 'http://127.0.0.1:5101'
+const password = process.env.QA01_PASSWORD
+const accounts = {
+  candidate: 'candidate@jobconnect.local',
+  recruiter: 'recruiter@jobconnect.local',
+  admin: 'admin@jobconnect.local',
+}
+
+async function login(role) {
+  const context = await request.newContext({ baseURL: apiBase })
+  const response = await context.post('/api/auth/login', { data: { email: accounts[role], password } })
+  expect(response.status(), `${role} login`).toBe(200)
+  const body = await response.json()
+  expect(body.data.user.role).toBe(role.toUpperCase())
+  return { context, token: body.data.token, user: body.data.user }
+}
+
+function authorization(token) {
+  return { Authorization: `Bearer ${token}` }
+}
+
+async function json(response) {
+  const body = await response.json()
+  expect(body.success).toBe(true)
+  return body.data
+}
+
+test.describe.serial('QA-01 isolated authenticated E2E', () => {
+  test('database-backed auth, refresh, unauthorized access, role isolation and API errors', async () => {
+    const anonymous = await request.newContext({ baseURL: apiBase })
+    expect((await anonymous.get('/api/admin/stats')).status()).toBe(401)
+    expect((await anonymous.post('/api/auth/login', { data: { email: accounts.candidate, password: 'wrong-password' } })).status()).toBe(401)
+
+    const candidate = await login('candidate')
+    const recruiter = await login('recruiter')
+    const admin = await login('admin')
+
+    expect((await candidate.context.get('/api/admin/stats', { headers: authorization(candidate.token) })).status()).toBe(403)
+    expect((await recruiter.context.get('/api/admin/stats', { headers: authorization(recruiter.token) })).status()).toBe(403)
+    expect((await admin.context.post('/api/jobs', { headers: authorization(admin.token), data: { title: 'Forbidden admin job', description: 'This request must be rejected by role authorization.' } })).status()).toBe(403)
+    expect((await candidate.context.post('/api/jobs', { headers: authorization(candidate.token), data: { title: 'Forbidden candidate job', description: 'This request must be rejected by role authorization.' } })).status()).toBe(403)
+
+    const invalidJob = await recruiter.context.post('/api/jobs', { headers: authorization(recruiter.token), data: { title: 'x', description: 'short' } })
+    expect(invalidJob.status()).toBe(400)
+    expect((await anonymous.get('/api/jobs/999999')).status()).toBe(404)
+
+    const refresh = await candidate.context.post('/api/auth/refresh')
+    expect(refresh.status()).toBe(200)
+    const refreshedToken = (await refresh.json()).data.token
+    expect(refreshedToken).toBeTruthy()
+    const logout = await candidate.context.post('/api/auth/logout', { headers: authorization(refreshedToken) })
+    expect(logout.ok()).toBe(true)
+    expect((await candidate.context.post('/api/auth/refresh')).status()).toBe(401)
+
+    await Promise.all([anonymous.dispose(), candidate.context.dispose(), recruiter.context.dispose(), admin.context.dispose()])
+  })
+
+  test('recruiter creates job, admin moderates, candidate applies, recruiter updates status', async () => {
+    const recruiter = await login('recruiter')
+    const admin = await login('admin')
+    const candidate = await login('candidate')
+    const title = 'QA-01 Isolated Full-stack Engineer'
+
+    const createdResponse = await recruiter.context.post('/api/jobs', {
+      headers: authorization(recruiter.token),
+      data: {
+        title,
+        description: 'Synthetic QA-only full-stack position for repeatable authenticated end-to-end testing.',
+        location: 'Ho Chi Minh City',
+        employmentType: 'FULL_TIME',
+        minSalary: 1500,
+        maxSalary: 2500,
+        requiredYearsExperience: 2,
+        deadline: '2030-12-31T00:00:00.000Z',
+        status: 'DRAFT',
+      },
+    })
+    expect(createdResponse.status()).toBe(201)
+    const job = await json(createdResponse)
+    expect((await recruiter.context.post(`/api/jobs/${job.id}/submit`, { headers: authorization(recruiter.token) })).status()).toBe(200)
+
+    const pending = await json(await admin.context.get('/api/admin/jobs?status=PENDING', { headers: authorization(admin.token) }))
+    expect(pending.items.some((item) => item.id === job.id)).toBe(true)
+    const moderated = await admin.context.patch(`/api/admin/jobs/${job.id}/moderation`, {
+      headers: authorization(admin.token),
+      data: { status: 'PUBLISHED', note: 'QA-01 approval' },
+    })
+    expect(moderated.status()).toBe(200)
+
+    const search = await json(await candidate.context.get(`/api/jobs?search=${encodeURIComponent(title)}`, { headers: authorization(candidate.token) }))
+    expect(search.items.map((item) => item.id)).toContain(job.id)
+    const detail = await json(await candidate.context.get(`/api/jobs/${job.id}`, { headers: authorization(candidate.token) }))
+    expect(detail.title).toBe(title)
+
+    const profile = await json(await candidate.context.get('/api/candidates/me', { headers: authorization(candidate.token) }))
+    expect(profile.resumes).toHaveLength(1)
+    const appliedResponse = await candidate.context.post(`/api/applications/jobs/${job.id}`, {
+      headers: authorization(candidate.token),
+      data: { resumeId: profile.resumes[0].id, coverLetter: 'QA-01 synthetic application' },
+    })
+    expect(appliedResponse.status()).toBe(201)
+    const application = await json(appliedResponse)
+
+    const mine = await json(await candidate.context.get('/api/applications/me', { headers: authorization(candidate.token) }))
+    expect(mine.some((item) => item.id === application.id && item.status === 'APPLIED')).toBe(true)
+    const managed = await json(await recruiter.context.get(`/api/applications/managed?jobId=${job.id}`, { headers: authorization(recruiter.token) }))
+    expect(managed.items.some((item) => item.id === application.id)).toBe(true)
+    const updated = await json(await recruiter.context.patch(`/api/applications/${application.id}/status`, {
+      headers: authorization(recruiter.token),
+      data: { status: 'REVIEWING', note: 'QA-01 reviewed' },
+    }))
+    expect(updated.status).toBe('REVIEWING')
+
+    const stats = await json(await admin.context.get('/api/admin/stats', { headers: authorization(admin.token) }))
+    expect(stats.jobs).toBeGreaterThanOrEqual(2)
+    expect(stats.applications).toBe(1)
+
+    for (const session of [candidate, recruiter, admin]) {
+      expect((await session.context.post('/api/auth/logout', { headers: authorization(session.token) })).ok()).toBe(true)
+      await session.context.dispose()
+    }
+  })
+
+  test('authenticated responsive smoke at mobile and desktop viewports', async ({ browser }) => {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'vi-VN' })
+    const page = await context.newPage()
+    const pageErrors = []
+    page.on('pageerror', (error) => pageErrors.push(error.message))
+    await page.goto('/login')
+    await page.getByLabel('Email').fill(accounts.candidate)
+    await page.getByLabel('Mật khẩu').fill(password)
+    await page.locator('form.auth-form button[type="submit"]').click()
+    await expect(page).toHaveURL(/\/jobs/)
+
+    for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
+      await page.setViewportSize(viewport)
+      await page.goto('/jobs')
+      await page.waitForLoadState('networkidle')
+      const dimensions = await page.evaluate(() => ({ width: innerWidth, scrollWidth: document.documentElement.scrollWidth }))
+      expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.width)
+      expect(await page.locator('#root').innerText()).not.toBe('')
+    }
+    expect(pageErrors).toEqual([])
+    await context.close()
+  })
+})

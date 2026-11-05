@@ -16,7 +16,7 @@ async function sendEmail({ to, subject, text }) {
     secure: config.smtp.secure,
     auth: { user: config.smtp.user, pass: config.smtp.password }
   });
-  await transporter.sendMail({ from: config.smtp.from, to, subject, text });
+  return transporter.sendMail({ from: config.smtp.from, to, subject, text });
 }
 
 module.exports = { sendEmail };

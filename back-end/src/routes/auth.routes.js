@@ -9,7 +9,7 @@ const validate = require('../middleware/validate');
 const { authenticate } = require('../middleware/auth');
 const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
-const nodemailer = require('nodemailer');
+const { sendEmail } = require('../services/mail.service');
 
 const authRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -24,6 +24,13 @@ const refreshRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: 'Quá nhiều yêu cầu làm mới phiên đăng nhập, vui lòng thử lại sau.' }
+});
+const passwordResetRequestRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Quá nhiều yêu cầu đặt lại mật khẩu, vui lòng thử lại sau.' }
 });
 
 const registerSchema = z.object({
@@ -186,18 +193,7 @@ async function rotateRefreshToken(rawToken, database = prisma, now = new Date())
 
 async function sendResetLink(email, token) {
   const link = `${config.frontendUrl}/reset-password?token=${encodeURIComponent(token)}`;
-  if (!config.smtp.host || !config.smtp.user || !config.smtp.password) {
-    console.warn('[password-reset] SMTP is not configured; reset email was not sent.');
-    return;
-  }
-  const transporter = nodemailer.createTransport({
-    host: config.smtp.host,
-    port: config.smtp.port,
-    secure: config.smtp.secure,
-    auth: { user: config.smtp.user, pass: config.smtp.password }
-  });
-  await transporter.sendMail({
-    from: config.smtp.from,
+  await sendEmail({
     to: email,
     subject: 'Đặt lại mật khẩu Job Connect',
     text: `Mở liên kết sau để đặt lại mật khẩu: ${link}`
@@ -265,7 +261,7 @@ router.post('/refresh', refreshRateLimit, asyncHandler(async (req, res) => {
   res.json({ success: true, data: { user: publicUser(result.user), token: createToken(result.user) } });
 }));
 
-router.post('/password-reset/request', authRateLimit, validate(passwordResetRequestSchema), asyncHandler(async (req, res) => {
+router.post('/password-reset/request', passwordResetRequestRateLimit, validate(passwordResetRequestSchema), asyncHandler(async (req, res) => {
   const user = await prisma.user.findUnique({ where: { email: req.body.email } });
   if (!user) {
     res.json({ success: true, message: 'Nếu email tồn tại, yêu cầu đặt lại mật khẩu đã được tạo' });
@@ -279,7 +275,11 @@ router.post('/password-reset/request', authRateLimit, validate(passwordResetRequ
       data: { userId: user.id, tokenHash, expiresAt: new Date(Date.now() + 60 * 60 * 1000) }
     })
   ]);
-  await sendResetLink(user.email, token);
+  try {
+    await sendResetLink(user.email, token);
+  } catch (error) {
+    console.error('[password-reset-email]', { name: error.name });
+  }
   res.json({ success: true, message: 'Nếu email tồn tại, yêu cầu đặt lại mật khẩu đã được tạo' });
 }));
 
@@ -349,6 +349,7 @@ router.post('/logout', authenticate, asyncHandler(async (req, res) => {
 
 module.exports = router;
 module.exports.authRateLimit = authRateLimit;
+module.exports.passwordResetRequestRateLimit = passwordResetRequestRateLimit;
 module.exports.durationToMs = durationToMs;
 module.exports.refreshCookieOptions = refreshCookieOptions;
 module.exports.rotateRefreshToken = rotateRefreshToken;
