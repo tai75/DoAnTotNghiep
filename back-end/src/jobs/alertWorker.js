@@ -8,6 +8,7 @@ const { sendEmail } = require('../services/mail.service');
 const LEASE_MS = 5 * 60 * 1000;
 const MAX_RETRIES = 5;
 let cronRunActive = false;
+let scheduledAlertWorker = null;
 
 function unsubscribeToken(alertId) {
   return crypto.createHmac('sha256', config.jwtSecret).update(String(alertId)).digest('hex');
@@ -208,12 +209,16 @@ async function runAlertWorker(now = new Date(), options = {}) {
   return sent;
 }
 
-function startAlertWorker() {
+function startAlertWorker(scheduler = cron) {
   if (!config.alertWorkerEnabled) {
-    console.info('Job alert worker disabled');
+    console.info('Job alert worker disabled (ALERT_WORKER_ENABLED is not true)');
     return null;
   }
-  const task = cron.schedule(config.alertWorkerCron, async () => {
+  if (scheduledAlertWorker) {
+    console.info('Job alert worker already scheduled; duplicate startup skipped');
+    return scheduledAlertWorker;
+  }
+  scheduledAlertWorker = scheduler.schedule(config.alertWorkerCron, async () => {
     if (cronRunActive) return;
     cronRunActive = true;
     try {
@@ -224,8 +229,8 @@ function startAlertWorker() {
       cronRunActive = false;
     }
   });
-  console.info(`Job alert worker started (${config.alertWorkerCron})`);
-  return task;
+  console.info(`Job alert worker enabled and scheduled (${config.alertWorkerCron})`);
+  return scheduledAlertWorker;
 }
 
 module.exports = {

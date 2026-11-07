@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { applicationsApi, candidateApi, jobsApi, notificationsApi } from '../services/api'
+import { applicationsApi, candidateApi, jobsApi } from '../services/api'
 import { useAuth } from '../context/auth'
 import AppShell from '../components/AppShell'
 import { Badge, EmptyState, Modal, Skeleton } from '../components/ui'
@@ -196,8 +196,6 @@ export default function JobBoardPage() {
   const [savedIds, setSavedIds] = useState(new Set())
   const [appliedIds, setAppliedIds] = useState(new Set())
   const [status, setStatus] = useState({ loading: true, error: '' })
-  const [notifications, setNotifications] = useState(null)
-  const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [resumes, setResumes] = useState([])
   const [alertOpen, setAlertOpen] = useState(false)
   const [filtersOpen, setFiltersOpen] = useState(false)
@@ -227,7 +225,6 @@ export default function JobBoardPage() {
     if (!session) return
     if (session.user.role === 'CANDIDATE') {
       candidateApi.savedJobs().then((items) => setSavedIds(new Set(items.map((item) => item.jobId)))).catch(() => {})
-      notificationsApi.list({ limit: 50 }).then(setNotifications).catch(() => {})
       Promise.all([candidateApi.profile(), applicationsApi.list()]).then(([profile, applications]) => {
         setResumes(profile.resumes || [])
         setAppliedIds(new Set(applications.map((item) => item.jobId)))
@@ -258,9 +255,7 @@ export default function JobBoardPage() {
     if (!payload.resumeId) { setStatus((current) => ({ ...current, error: 'Vui lòng chọn CV trước khi ứng tuyển.' })); return Promise.reject(new Error('Vui lòng chọn CV trước khi ứng tuyển.')) }
     try { await jobsApi.apply(job.id, payload.coverLetter, Number(payload.resumeId), payload.answers); setAppliedIds((current) => new Set([...current, job.id])); setStatus({ loading: false, error: '' }) } catch (error) { setStatus((current) => ({ ...current, error: error.message })); throw error }
   }
-  const unread = notifications?.items?.filter((item) => !item.isRead).length || 0
-
-  return <AppShell user={session?.user} logout={logout} unread={unread} notifications={notifications} notificationsOpen={notificationsOpen} onNotifications={() => setNotificationsOpen((value) => !value)} onReadAll={async () => { await notificationsApi.markAllRead(); setNotifications((current) => current && { ...current, items: current.items.map((item) => ({ ...item, isRead: true })) }) }} onRead={async (item) => { if (!item.isRead) { await notificationsApi.markRead(item.id); setNotifications((current) => ({ ...current, items: current.items.map((entry) => entry.id === item.id ? { ...entry, isRead: true } : entry) })) } }}>
+  return <AppShell user={session?.user} logout={logout}>
     <button type="button" className="public-filter-toggle" aria-label="Mở bộ lọc việc làm" aria-expanded={filtersOpen} onClick={() => setFiltersOpen(true)}>☷ Bộ lọc</button>
     {filtersOpen && <><button type="button" className="public-filter-overlay" aria-label="Đóng bộ lọc việc làm" onClick={() => setFiltersOpen(false)} /><button type="button" className="public-filter-close" aria-label="Đóng bộ lọc việc làm" onClick={() => setFiltersOpen(false)}>×</button></>}
     {id && <button type="button" className="public-detail-back" onClick={() => navigate(`/jobs${searchParams.toString() ? `?${searchParams}` : ''}`)}>← Danh sách việc làm</button>}

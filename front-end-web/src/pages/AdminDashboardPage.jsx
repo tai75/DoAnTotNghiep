@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { adminApi } from '../services/api'
 import { useAuth } from '../context/auth'
 import AppShell from '../components/AppShell'
@@ -16,7 +17,9 @@ function UserTable({ users, onToggle }) {
 
 export default function AdminDashboardPage() {
   const { session, logout } = useAuth()
-  const [activeSection, setActiveSection] = useState('overview')
+  const [searchParams] = useSearchParams()
+  const requestedSection = searchParams.get('section')
+  const [activeSection, setActiveSection] = useState(() => ['overview', 'jobs', 'users', 'reviews', 'audit'].includes(requestedSection) ? requestedSection : 'overview')
   const [stats, setStats] = useState(null)
   const [jobs, setJobs] = useState([])
   const [users, setUsers] = useState([])

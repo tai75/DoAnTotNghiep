@@ -26,11 +26,12 @@ const router = require('express').Router();
 router.get('/', authenticate, validate(listSchema), asyncHandler(async (req, res) => {
   const { isRead, page, limit } = req.query;
   const where = { userId: req.user.id, ...(isRead === undefined ? {} : { isRead }) };
-  const [items, total] = await prisma.$transaction([
+  const [items, total, unreadCount] = await prisma.$transaction([
     prisma.notification.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: limit }),
-    prisma.notification.count({ where })
+    prisma.notification.count({ where }),
+    prisma.notification.count({ where: { userId: req.user.id, isRead: false } })
   ]);
-  res.json({ success: true, data: { items, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } } });
+  res.json({ success: true, data: { items, unreadCount, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } } });
 }));
 
 router.patch('/:id/read', authenticate, validate(idSchema), asyncHandler(async (req, res) => {

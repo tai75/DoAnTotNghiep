@@ -133,7 +133,10 @@ export const companiesApi = {
 
 export const applicationsApi = {
   list: () => apiRequest('/applications/me'),
-  withdraw: (id) => apiRequest(`/applications/${id}/withdraw`, { method: 'PATCH' })
+  withdraw: (id, expectedStatus) => apiRequest(`/applications/${id}/withdraw`, {
+    method: 'PATCH',
+    body: JSON.stringify({ expectedStatus })
+  })
 }
 
 export const notificationsApi = {
@@ -179,6 +182,9 @@ export const candidateApi = {
   saveJob: (id) => apiRequest(`/candidates/me/saved-jobs/${id}`, { method: 'POST' }),
   unsaveJob: (id) => apiRequest(`/candidates/me/saved-jobs/${id}`, { method: 'DELETE' }),
   alerts: () => apiRequest('/candidates/me/alerts'),
+  invitations: (params = {}) => apiRequest(`/candidates/me/invitations?${new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== '')))}`),
+  invitation: (id) => apiRequest(`/candidates/me/invitations/${id}`),
+  respondToInvitation: (id, status) => apiRequest(`/candidates/me/invitations/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
   createAlert: (payload) => apiRequest('/candidates/me/alerts', { method: 'POST', body: JSON.stringify(payload) }),
   updateAlert: (id, payload) => apiRequest(`/candidates/me/alerts/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   deleteAlert: (id) => apiRequest(`/candidates/me/alerts/${id}`, { method: 'DELETE' }),
@@ -226,7 +232,14 @@ export const recruiterApi = {
   },
   addApplicationNote: (id, content) => apiRequest(`/applications/${id}/notes`, { method: 'POST', body: JSON.stringify({ content }) }),
   deleteApplicationNote: (id, noteId) => apiRequest(`/applications/${id}/notes/${noteId}`, { method: 'DELETE' }),
-  bulkRejectApplications: (applicationIds, message) => apiRequest('/applications/managed/bulk-reject', { method: 'POST', body: JSON.stringify({ applicationIds, message }) }),
+  bulkRejectApplications: (applications, message) => apiRequest('/applications/managed/bulk-reject', {
+    method: 'POST',
+    body: JSON.stringify({
+      applicationIds: applications.map((application) => application.id),
+      expectedStatuses: Object.fromEntries(applications.map((application) => [application.id, application.status])),
+      message
+    })
+  }),
   talent: (params = {}) => apiRequest(`/recruiters/talent?${new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== '')))}`),
   savedTalentSearches: () => apiRequest('/recruiters/talent/searches'),
   saveTalentSearch: (name, filters) => apiRequest('/recruiters/talent/searches', { method: 'POST', body: JSON.stringify({ name, filters }) }),
@@ -235,9 +248,9 @@ export const recruiterApi = {
   funnel: (jobId) => apiRequest(`/recruiters/funnel/${jobId}`),
   application: (id) => apiRequest(`/applications/${id}`),
   createConversation: (applicationId) => apiRequest(`/conversations/applications/${applicationId}`, { method: 'POST' }),
-  updateApplicationStatus: (id, status, note) => apiRequest(`/applications/${id}/status`, {
+  updateApplicationStatus: (id, status, note, expectedStatus) => apiRequest(`/applications/${id}/status`, {
     method: 'PATCH',
-    body: JSON.stringify({ status, note: note || undefined })
+    body: JSON.stringify({ status, note: note || undefined, expectedStatus })
   }),
   downloadResume: (id, fileName = 'CV-ung-vien') => downloadFile(`/candidates/resumes/${id}/download`, fileName)
 }

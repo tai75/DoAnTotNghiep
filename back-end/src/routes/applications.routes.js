@@ -7,6 +7,12 @@ const { authenticate, authorize } = require('../middleware/auth');
 const config = require('../config/env');
 const { calculateMatchScore, buildRuleExplanation } = require('../services/matching.service');
 const { sendEmail } = require('../services/mail.service');
+const {
+  assertExpectedStatus,
+  applyApplicationTransition
+} = require('../services/applicationState.service');
+
+const applicationStatusSchema = z.enum(['APPLIED', 'REVIEWING', 'SHORTLISTED', 'INTERVIEWING', 'OFFERED', 'ACCEPTED', 'REJECTED', 'WITHDRAWN']);
 
 const applySchema = z.object({
   body: z.object({
@@ -24,7 +30,8 @@ const applySchema = z.object({
 const statusSchema = z.object({
   body: z.object({
     status: z.enum(['REVIEWING', 'SHORTLISTED', 'INTERVIEWING', 'OFFERED', 'ACCEPTED', 'REJECTED']),
-    note: z.string().max(2000).optional()
+    note: z.string().max(2000).optional(),
+    expectedStatus: applicationStatusSchema
   }),
   params: z.object({ id: z.coerce.number().int().positive() }),
   query: z.object({})
@@ -32,6 +39,14 @@ const statusSchema = z.object({
 
 const idSchema = z.object({
   body: z.object({}),
+  params: z.object({ id: z.coerce.number().int().positive() }),
+  query: z.object({})
+});
+
+const withdrawSchema = z.object({
+  body: z.object({
+    expectedStatus: applicationStatusSchema
+  }),
   params: z.object({ id: z.coerce.number().int().positive() }),
   query: z.object({})
 });
@@ -50,7 +65,17 @@ const recruiterListSchema = z.object({
 });
 
 const bulkRejectSchema = z.object({
-  body: z.object({ applicationIds: z.array(z.coerce.number().int().positive()).min(1).max(100), message: z.string().max(2000).optional() }),
+  body: z.object({
+    applicationIds: z.array(z.coerce.number().int().positive()).min(1).max(100),
+    expectedStatuses: z.record(applicationStatusSchema),
+    message: z.string().max(2000).optional()
+  }).superRefine((body, context) => {
+    for (const applicationId of body.applicationIds) {
+      if (!Object.prototype.hasOwnProperty.call(body.expectedStatuses, String(applicationId))) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['expectedStatuses', String(applicationId)], message: 'expectedStatus is required' });
+      }
+    }
+  }),
   params: z.object({}), query: z.object({})
 });
 const noteSchema = z.object({
@@ -67,6 +92,23 @@ function applicationForViewer(application, isCandidate) {
   if (!isCandidate) return application;
   const { notes, ...candidateView } = application;
   return candidateView;
+}
+
+async function sendStatusEmailBestEffort({ applicationId, email, jobTitle, status }) {
+  if (!email) return;
+  try {
+    await sendEmail({
+      to: email,
+      subject: `Cập nhật đơn ứng tuyển: ${jobTitle}`,
+      text: `Đơn ứng tuyển của bạn đã chuyển sang trạng thái ${status}. Xem chi tiết tại ${config.frontendUrl}/my-jobs?tab=applied`
+    });
+  } catch (error) {
+    console.warn('[application-status-email] delivery failed after commit', {
+      applicationId,
+      status,
+      errorName: error?.name || 'Error'
+    });
+  }
 }
 
 router.post('/jobs/:jobId', authenticate, authorize('CANDIDATE'), validate(applySchema), asyncHandler(async (req, res) => {
@@ -158,7 +200,7 @@ router.post('/jobs/:jobId', authenticate, authorize('CANDIDATE'), validate(apply
           type: 'NEW_APPLICATION',
           title: 'Có đơn ứng tuyển mới',
           content: `Có ứng viên mới ứng tuyển vào vị trí ${job.title}.`,
-          link: `/recruiter/applications/${result.id}`
+          link: `/recruiter?section=applications&applicationId=${result.id}`
         }))
       });
     }
@@ -201,17 +243,29 @@ router.get('/managed', authenticate, authorize('RECRUITER'), validate(recruiterL
 router.post('/managed/bulk-reject', authenticate, authorize('RECRUITER'), validate(bulkRejectSchema), asyncHandler(async (req, res) => {
   const recruiter = await prisma.recruiter.findUnique({ where: { userId: req.user.id } });
   if (!recruiter) throw new ApiError(403, 'Tài khoản chưa được liên kết với nhà tuyển dụng');
-  const applications = await prisma.application.findMany({ where: { id: { in: req.body.applicationIds }, job: { companyId: recruiter.companyId } }, include: { job: true } });
-  if (applications.length !== req.body.applicationIds.length) throw new ApiError(403, 'Một số hồ sơ không thuộc công ty của bạn');
+  const applicationIds = [...new Set(req.body.applicationIds)];
+  const applications = await prisma.application.findMany({
+    where: { id: { in: applicationIds }, job: { companyId: recruiter.companyId } },
+    include: { job: true, candidate: { select: { userId: true } } }
+  });
+  if (applications.length !== applicationIds.length) throw new ApiError(403, 'Một số hồ sơ không thuộc công ty của bạn');
+  for (const application of applications) {
+    if (application.status !== 'REJECTED') assertExpectedStatus(application, req.body.expectedStatuses[String(application.id)]);
+  }
   const updated = await prisma.$transaction(async (transaction) => {
+    const changedIds = [];
     for (const application of applications) {
-      if (application.status === 'REJECTED') continue;
-      await transaction.application.update({ where: { id: application.id }, data: { status: 'REJECTED' } });
+      const transition = await applyApplicationTransition(transaction, {
+        application,
+        targetStatus: 'REJECTED',
+        actor: 'RECRUITER'
+      });
+      if (!transition.changed) continue;
       await transaction.applicationStatusHistory.create({ data: { applicationId: application.id, fromStatus: application.status, toStatus: 'REJECTED', note: req.body.message } });
-      const candidate = await transaction.candidate.findUnique({ where: { id: application.candidateId } });
-      if (candidate) await transaction.notification.create({ data: { userId: candidate.userId, type: 'APPLICATION_STATUS_CHANGED', title: 'Đơn ứng tuyển được cập nhật', content: req.body.message || `Đơn ứng tuyển vị trí ${application.job.title} đã bị từ chối.`, link: '/my-jobs?tab=applied' } });
+      await transaction.notification.create({ data: { userId: application.candidate.userId, type: 'APPLICATION_STATUS_CHANGED', title: 'Đơn ứng tuyển được cập nhật', content: req.body.message || `Đơn ứng tuyển vị trí ${application.job.title} đã bị từ chối.`, link: '/my-jobs?tab=applied' } });
+      changedIds.push(application.id);
     }
-    return applications.map((application) => application.id);
+    return changedIds;
   });
   res.json({ success: true, data: { applicationIds: updated } });
 }));
@@ -248,49 +302,63 @@ router.get('/:id', authenticate, validate(idSchema), asyncHandler(async (req, re
   res.json({ success: true, data: applicationForViewer(application, isCandidate) });
 }));
 
-router.patch('/:id/withdraw', authenticate, authorize('CANDIDATE'), validate(idSchema), asyncHandler(async (req, res) => {
+router.patch('/:id/withdraw', authenticate, authorize('CANDIDATE'), validate(withdrawSchema), asyncHandler(async (req, res) => {
   const candidate = await prisma.candidate.findUnique({ where: { userId: req.user.id } });
   const application = await prisma.application.findUnique({ where: { id: req.params.id } });
   if (!application || !candidate || application.candidateId !== candidate.id) throw new ApiError(404, 'Không tìm thấy hồ sơ ứng tuyển');
-  if (['ACCEPTED', 'REJECTED', 'WITHDRAWN'].includes(application.status)) throw new ApiError(400, 'Không thể rút hồ sơ ở trạng thái hiện tại');
+  if (application.status !== 'WITHDRAWN') assertExpectedStatus(application, req.body.expectedStatus);
   const updated = await prisma.$transaction(async (transaction) => {
-    const result = await transaction.application.update({ where: { id: application.id }, data: { status: 'WITHDRAWN' } });
+    const transition = await applyApplicationTransition(transaction, {
+      application,
+      targetStatus: 'WITHDRAWN',
+      actor: 'CANDIDATE'
+    });
+    if (!transition.changed) return transition.application;
     await transaction.applicationStatusHistory.create({ data: { applicationId: application.id, fromStatus: application.status, toStatus: 'WITHDRAWN' } });
     const recruiterUsers = await transaction.recruiter.findMany({ where: { company: { jobs: { some: { id: application.jobId } } } }, select: { userId: true } });
-    if (recruiterUsers.length) await transaction.notification.createMany({ data: recruiterUsers.map(({ userId }) => ({ userId, type: 'APPLICATION_STATUS_CHANGED', title: 'Ứng viên đã rút hồ sơ', content: 'Một ứng viên đã rút hồ sơ ứng tuyển.', link: `/recruiter/applications/${application.id}` })) });
-    return result;
+    if (recruiterUsers.length) await transaction.notification.createMany({ data: recruiterUsers.map(({ userId }) => ({ userId, type: 'APPLICATION_STATUS_CHANGED', title: 'Ứng viên đã rút hồ sơ', content: 'Một ứng viên đã rút hồ sơ ứng tuyển.', link: `/recruiter?section=applications&applicationId=${application.id}` })) });
+    return transition.application;
   });
   res.json({ success: true, data: updated });
 }));
 
 router.patch('/:id/status', authenticate, authorize('RECRUITER'), validate(statusSchema), asyncHandler(async (req, res) => {
-  const application = await prisma.application.findUnique({ where: { id: req.params.id }, include: { job: true } });
+  const application = await prisma.application.findUnique({
+    where: { id: req.params.id },
+    include: { job: true, candidate: { include: { user: { select: { id: true, email: true } } } } }
+  });
   if (!application) throw new ApiError(404, 'Không tìm thấy hồ sơ ứng tuyển');
   const recruiter = await prisma.recruiter.findUnique({ where: { userId: req.user.id } });
   if (!recruiter) throw new ApiError(403, 'Tài khoản chưa được liên kết với nhà tuyển dụng');
   if (application.job.companyId !== recruiter.companyId) throw new ApiError(403, 'Bạn không quản lý việc làm này');
+  if (application.status !== req.body.status) assertExpectedStatus(application, req.body.expectedStatus);
   const updated = await prisma.$transaction(async (transaction) => {
-    const result = await transaction.application.update({ where: { id: application.id }, data: { status: req.body.status } });
-    await transaction.applicationStatusHistory.create({ data: { applicationId: application.id, fromStatus: application.status, toStatus: req.body.status, note: req.body.note } });
-    const candidate = await transaction.candidate.findUnique({ where: { id: application.candidateId }, include: { user: { select: { id: true, email: true } } } });
-    if (candidate) {
-      await transaction.notification.create({
-        data: {
-          userId: candidate.userId,
-          type: 'APPLICATION_STATUS_CHANGED',
-          title: 'Đơn ứng tuyển được cập nhật',
-          content: `Đơn ứng tuyển vị trí ${application.job.title} đã chuyển sang trạng thái ${req.body.status}.`,
-          link: `/my-jobs?tab=applied`
-        }
-      });
+    const transition = await applyApplicationTransition(transaction, {
+      application,
+      targetStatus: req.body.status,
+      actor: 'RECRUITER'
+    });
+    if (!transition.changed) {
+      return { result: transition.application, email: null, changed: false };
     }
-    return { result, email: candidate?.user?.email };
+    await transaction.applicationStatusHistory.create({ data: { applicationId: application.id, fromStatus: application.status, toStatus: req.body.status, note: req.body.note } });
+    await transaction.notification.create({
+      data: {
+        userId: application.candidate.userId,
+        type: 'APPLICATION_STATUS_CHANGED',
+        title: 'Đơn ứng tuyển được cập nhật',
+        content: `Đơn ứng tuyển vị trí ${application.job.title} đã chuyển sang trạng thái ${req.body.status}.`,
+        link: `/my-jobs?tab=applied`
+      }
+    });
+    return { result: transition.application, email: application.candidate.user.email, changed: true };
   });
-  if (updated.email) {
-    await sendEmail({
-      to: updated.email,
-      subject: `Cập nhật đơn ứng tuyển: ${application.job.title}`,
-      text: `Đơn ứng tuyển của bạn đã chuyển sang trạng thái ${req.body.status}. Xem chi tiết tại ${config.frontendUrl}/my-jobs?tab=applied`
+  if (updated.changed) {
+    await sendStatusEmailBestEffort({
+      applicationId: application.id,
+      email: updated.email,
+      jobTitle: application.job.title,
+      status: req.body.status
     });
   }
   res.json({ success: true, data: updated.result });

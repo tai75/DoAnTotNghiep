@@ -2,15 +2,16 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Avatar } from './ui'
 import { messagesApi } from '../services/api'
+import NotificationCenter from './NotificationCenter'
 import './AppShell.css'
 
 const roleLinks = {
-  CANDIDATE: [{ to: '/jobs', label: 'Việc làm', icon: '⌕' }, { to: '/my-jobs', label: 'Việc của tôi', icon: '▣' }],
+  CANDIDATE: [{ to: '/jobs', label: 'Việc làm', icon: '⌕' }, { to: '/my-jobs', label: 'Việc của tôi', icon: '▣' }, { to: '/invitations', label: 'Lời mời', icon: '✉' }],
   RECRUITER: [{ to: '/recruiter', label: 'Việc làm', icon: '▤' }, { to: '/recruiter/talent', label: 'Tìm ứng viên', icon: '⌕' }, { to: '/recruiter', label: 'Việc của tôi', icon: '▣' }],
   ADMIN: [{ to: '/admin', label: 'Việc làm', icon: '▤' }, { to: '/admin', label: 'Việc của tôi', icon: '▣' }]
 }
 
-export default function AppShell({ user, logout, children, unread = 0, notifications, notificationsOpen, onNotifications, onReadAll, onRead }) {
+export default function AppShell({ user, logout, children }) {
   const navigate = useNavigate()
   const location = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -61,7 +62,6 @@ export default function AppShell({ user, logout, children, unread = 0, notificat
         setMenuOpen(false)
         setDrawerOpen(false)
         setWorkspaceOpen(false)
-        if (notificationsOpen) onNotifications?.()
       }
     }
     const closeOnOutsideClick = (event) => {
@@ -73,7 +73,7 @@ export default function AppShell({ user, logout, children, unread = 0, notificat
       document.removeEventListener('keydown', closeOnEscape)
       document.removeEventListener('mousedown', closeOnOutsideClick)
     }
-  }, [notificationsOpen, onNotifications])
+  }, [])
 
   function submitSearch(event) {
     event.preventDefault()
@@ -89,7 +89,7 @@ export default function AppShell({ user, logout, children, unread = 0, notificat
         <form className="app-search" onSubmit={submitSearch} role="search"><span aria-hidden="true">⌕</span><input aria-label="Tìm kiếm việc làm" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tìm việc làm, kỹ năng..." /></form>
         <nav className="app-nav" aria-label="Điều hướng chính">{links.map((link, index) => <Link className={location.pathname === link.to && index === 0 ? 'active' : ''} key={`${link.to}-${index}`} to={link.to}><span aria-hidden="true">{link.icon}</span>{link.label}</Link>)}</nav>
         <div className="app-actions">
-          {user ? <><div className="app-notification-wrap"><button className="app-action-button" aria-label={`Thông báo${unread ? `, ${unread} chưa đọc` : ''}`} aria-expanded={notificationsOpen} onClick={onNotifications}><span aria-hidden="true">♢</span>{unread > 0 && <b>{unread > 9 ? '9+' : unread}</b>}</button>{notificationsOpen && <div className="app-notification-popover" role="region" aria-label="Thông báo"><div className="app-popover-heading"><strong>Thông báo</strong><button onClick={onReadAll}>Đọc tất cả</button></div>{notifications?.items?.length ? notifications.items.slice(0, 5).map((item) => <button className={`app-notification-item ${item.isRead ? '' : 'unread'}`} key={item.id} onClick={() => onRead?.(item)}><strong>{item.title}</strong><span>{item.content}</span><small>{new Date(item.createdAt).toLocaleString('vi-VN')}</small></button>) : <p className="app-notification-empty">Chưa có thông báo.</p>}</div>}</div><Link className="app-action-button" to="/messages" aria-label={`Tin nhắn${unreadMessages ? `, ${unreadMessages} chưa đọc` : ''}`}><span aria-hidden="true">✉</span>{unreadMessages > 0 && <b>{unreadMessages > 9 ? '9+' : unreadMessages}</b>}</Link><div className="app-account" ref={menuRef}><button className="app-account-button" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((current) => !current)}><Avatar name={user.fullName} size="sm" /><span>{user.fullName}</span><span aria-hidden="true">⌄</span></button>          {menuOpen && <div className="app-account-menu" role="menu"><Link role="menuitem" to={profilePath} onClick={() => setMenuOpen(false)}>Hồ sơ</Link>{user.role === 'CANDIDATE' && <Link role="menuitem" to="/alerts" onClick={() => setMenuOpen(false)}>Thông báo việc làm</Link>}<Link role="menuitem" to="/messages" onClick={() => setMenuOpen(false)}>Tin nhắn</Link><button role="menuitem" onClick={logout}>Đăng xuất</button></div>}</div></> : <Link className="app-login-link" to={loginPath}>Đăng nhập</Link>}
+          {user ? <><NotificationCenter user={user} /><Link className="app-action-button" to="/messages" aria-label={`Tin nhắn${unreadMessages ? `, ${unreadMessages} chưa đọc` : ''}`}><span aria-hidden="true">✉</span>{unreadMessages > 0 && <b>{unreadMessages > 9 ? '9+' : unreadMessages}</b>}</Link><div className="app-account" ref={menuRef}><button className="app-account-button" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((current) => !current)}><Avatar name={user.fullName} size="sm" /><span>{user.fullName}</span><span aria-hidden="true">⌄</span></button>          {menuOpen && <div className="app-account-menu" role="menu"><Link role="menuitem" to={profilePath} onClick={() => setMenuOpen(false)}>Hồ sơ</Link>{user.role === 'CANDIDATE' && <Link role="menuitem" to="/alerts" onClick={() => setMenuOpen(false)}>Thông báo việc làm</Link>}<Link role="menuitem" to="/messages" onClick={() => setMenuOpen(false)}>Tin nhắn</Link><button role="menuitem" onClick={logout}>Đăng xuất</button></div>}</div></> : <Link className="app-login-link" to={loginPath}>Đăng nhập</Link>}
         </div>
       </div>
     </header>

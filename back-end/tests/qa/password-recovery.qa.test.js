@@ -18,13 +18,17 @@ describe.skipIf(!enabled)('QA database password recovery', () => {
 
   beforeAll(async () => {
     prisma = new PrismaClient({ datasourceUrl: process.env.QA01_DATABASE_URL })
+    globalThis.__JOB_CONNECT_TEST_PRISMA__ = prisma
     await assertQaDatabase(prisma)
     await resetBusinessData(prisma)
     await seed(prisma)
     candidate = await prisma.user.findUnique({ where: { email: 'candidate@jobconnect.local' } })
   }, 30_000)
 
-  afterAll(async () => prisma?.$disconnect())
+  afterAll(async () => {
+    delete globalThis.__JOB_CONNECT_TEST_PRISMA__
+    await prisma?.$disconnect()
+  })
 
   it('returns the same response for existing and unknown accounts without storing the raw token', async () => {
     const existing = await request(app).post('/api/auth/password-reset/request').send({ email: candidate.email })

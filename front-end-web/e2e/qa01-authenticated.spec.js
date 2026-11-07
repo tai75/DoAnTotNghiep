@@ -109,7 +109,7 @@ test.describe.serial('QA-01 isolated authenticated E2E', () => {
     expect(managed.items.some((item) => item.id === application.id)).toBe(true)
     const updated = await json(await recruiter.context.patch(`/api/applications/${application.id}/status`, {
       headers: authorization(recruiter.token),
-      data: { status: 'REVIEWING', note: 'QA-01 reviewed' },
+      data: { status: 'REVIEWING', note: 'QA-01 reviewed', expectedStatus: 'APPLIED' },
     }))
     expect(updated.status).toBe('REVIEWING')
 
@@ -123,26 +123,81 @@ test.describe.serial('QA-01 isolated authenticated E2E', () => {
     }
   })
 
-  test('authenticated responsive smoke at mobile and desktop viewports', async ({ browser }) => {
-    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'vi-VN' })
-    const page = await context.newPage()
-    const pageErrors = []
-    page.on('pageerror', (error) => pageErrors.push(error.message))
+  test('recruiter sends invitation, candidate accepts in inbox, recruiter sees updated status', async ({ page }) => {
+    const recruiter = await login('recruiter')
+    const jobs = await json(await recruiter.context.get('/api/jobs/me', { headers: authorization(recruiter.token) }))
+    const job = jobs.find((item) => item.title === 'QA-01 Existing Backend Engineer' && item.status === 'PUBLISHED')
+    expect(job).toBeTruthy()
+    const talent = await json(await recruiter.context.get(`/api/recruiters/talent?jobId=${job.id}`, { headers: authorization(recruiter.token) }))
+    const candidate = talent.items.find((item) => !item.applied && !item.invitation)
+    expect(candidate).toBeTruthy()
+
+    const sent = await recruiter.context.post('/api/recruiters/talent/invite', {
+      headers: authorization(recruiter.token),
+      data: { candidateId: candidate.id, jobId: job.id, message: 'QA-01 synthetic talent invitation' },
+    })
+    expect(sent.status()).toBe(201)
+    const invitation = await json(sent)
+
     await page.goto('/login')
     await page.getByLabel('Email').fill(accounts.candidate)
     await page.getByLabel('Mật khẩu').fill(password)
     await page.locator('form.auth-form button[type="submit"]').click()
-    await expect(page).toHaveURL(/\/jobs/)
+    await expect(page).not.toHaveURL(/\/login/)
+    await page.goto(`/invitations/${invitation.id}`)
+    await expect(page.getByRole('dialog', { name: 'Chi tiết lời mời' })).toBeVisible()
+    await page.getByRole('button', { name: 'Chấp nhận' }).click()
+    await page.getByRole('dialog', { name: 'Chấp nhận lời mời?' }).getByRole('button', { name: 'Xác nhận' }).click()
+    await expect(page.getByText('Bạn đã chấp nhận lời mời.')).toBeVisible()
 
-    for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
-      await page.setViewportSize(viewport)
-      await page.goto('/jobs')
-      await page.waitForLoadState('networkidle')
+    const refreshed = await json(await recruiter.context.get(`/api/recruiters/talent?jobId=${job.id}`, { headers: authorization(recruiter.token) }))
+    expect(refreshed.items.find((item) => item.id === candidate.id).invitation.status).toBe('ACCEPTED')
+    const notifications = await json(await recruiter.context.get('/api/notifications?limit=20', { headers: authorization(recruiter.token) }))
+    expect(notifications.items.some((item) => item.type === 'TALENT_INVITATION_RESPONSE')).toBe(true)
+    await recruiter.context.dispose()
+  })
+
+  test('global notification center works for candidate, recruiter and admin at required viewports', async ({ browser }) => {
+    const cases = [
+      { role: 'candidate', path: '/my-jobs', viewport: { width: 390, height: 844 }, title: 'Đơn ứng tuyển được cập nhật', destination: /\/my-jobs\?tab=applied$/ },
+      { role: 'recruiter', path: '/recruiter', viewport: { width: 768, height: 1024 }, title: 'Có đơn ứng tuyển mới', destination: /\/recruiter\?section=applications&applicationId=\d+$/ },
+      { role: 'admin', path: '/admin', viewport: { width: 1440, height: 900 }, title: null, destination: null },
+    ]
+
+    for (const item of cases) {
+      const context = await browser.newContext({ viewport: item.viewport, locale: 'vi-VN' })
+      const page = await context.newPage()
+      const pageErrors = []
+      page.on('pageerror', (error) => pageErrors.push(error.message))
+      await page.goto('/login')
+      await page.getByLabel('Email').fill(accounts[item.role])
+      await page.getByLabel('Mật khẩu').fill(password)
+      await page.locator('form.auth-form button[type="submit"]').click()
+      await expect(page, `${item.role} login completed`).not.toHaveURL(/\/login/)
+      await page.goto(item.path)
+      const bell = page.getByRole('button', { name: /Thông báo/ })
+      await expect(bell).toBeVisible()
+      await bell.click()
+      const dialog = page.getByRole('dialog', { name: 'Thông báo' })
+      await expect(dialog).toBeVisible()
+      if (item.title) {
+        await expect(dialog.getByText(item.title, { exact: true })).toBeVisible()
+        await dialog.getByRole('button', { name: new RegExp(item.title) }).click()
+        await expect(page).toHaveURL(item.destination)
+      } else {
+        await expect(dialog.getByText('Chưa có thông báo')).toBeVisible()
+      }
       const dimensions = await page.evaluate(() => ({ width: innerWidth, scrollWidth: document.documentElement.scrollWidth }))
       expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.width)
-      expect(await page.locator('#root').innerText()).not.toBe('')
+      if (item.role === 'candidate') {
+        await page.setViewportSize({ width: 1440, height: 900 })
+        await page.goto('/jobs')
+        await expect(page.getByRole('button', { name: /Thông báo/ })).toBeVisible()
+        const desktopDimensions = await page.evaluate(() => ({ width: innerWidth, scrollWidth: document.documentElement.scrollWidth }))
+        expect(desktopDimensions.scrollWidth).toBeLessThanOrEqual(desktopDimensions.width)
+      }
+      expect(pageErrors).toEqual([])
+      await context.close()
     }
-    expect(pageErrors).toEqual([])
-    await context.close()
   })
 })

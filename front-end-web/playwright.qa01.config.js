@@ -45,6 +45,7 @@ export default defineConfig({
         API_PUBLIC_URL: 'http://127.0.0.1:5101',
         CORS_ORIGINS: 'http://127.0.0.1:5174',
         ALERT_WORKER_ENABLED: 'false',
+        AUTH_RATE_LIMIT_MAX: '100',
         MATCHING_V2_ENABLED: 'false',
         MATCHING_V3_ENABLED: 'false',
         SMTP_HOST: '',

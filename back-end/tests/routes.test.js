@@ -230,4 +230,12 @@ describe('route validation and authentication safeguards', () => {
     expect(candidatesRoutes.httpUrl.safeParse('http://example.com/project').success).toBe(true)
     expect(candidatesRoutes.httpUrl.safeParse('ftp://example.com/cv').success).toBe(false)
   })
+
+  it('allows accepting only pending invitations for published jobs before deadline', () => {
+    const availability = candidatesRoutes.invitationAvailability
+    expect(availability({ status: 'PENDING', job: { status: 'PUBLISHED', deadline: new Date('2099-01-01') } }).isActionable).toBe(true)
+    expect(availability({ status: 'PENDING', job: { status: 'CLOSED', deadline: null } })).toMatchObject({ isActionable: false })
+    expect(availability({ status: 'PENDING', job: { status: 'PUBLISHED', deadline: new Date('2020-01-01') } })).toMatchObject({ isActionable: false })
+    expect(availability({ status: 'ACCEPTED', job: { status: 'PUBLISHED', deadline: null } }).isActionable).toBe(false)
+  })
 })

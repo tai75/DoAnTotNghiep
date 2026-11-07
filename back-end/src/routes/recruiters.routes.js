@@ -77,11 +77,11 @@ router.get('/talent', validate(talentSchema), asyncHandler(async (req, res) => {
    job = await prisma.job.findFirst({ where: { id: filters.jobId, companyId: recruiter.companyId }, include: { skills: { include: { skill: true } } } });
    if (!job) throw new ApiError(404, 'Không tìm thấy việc làm thuộc công ty của bạn');
  }
- const candidates = await prisma.candidate.findMany({ where, include: { skills: { include: { skill: true } }, user: { select: { fullName: true, email: true, phone: true } }, applications: { where: job ? { jobId: job.id } : { job: { companyId: recruiter.companyId } }, select: { id: true } }, talentInvitations: { where: { recruiterUserId: req.user.id, ...(job ? { jobId: job.id } : {}) }, select: { status: true } } }, orderBy: { updatedAt: 'desc' } });
+ const candidates = await prisma.candidate.findMany({ where, include: { skills: { include: { skill: true } }, user: { select: { fullName: true, email: true, phone: true } }, applications: { where: job ? { jobId: job.id } : { job: { companyId: recruiter.companyId } }, select: { id: true } }, talentInvitations: { where: { recruiterUserId: req.user.id, ...(job ? { jobId: job.id } : {}) }, select: { id: true, jobId: true, status: true, createdAt: true, respondedAt: true }, orderBy: { createdAt: 'desc' } } }, orderBy: { updatedAt: 'desc' } });
  const items = candidates.map((candidate) => {
    const applied = candidate.applications.length > 0;
    const invitedAccepted = candidate.talentInvitations.some(({ status }) => status === 'ACCEPTED');
-   return { id: candidate.id, fullName: candidate.user.fullName, headline: candidate.headline, desiredPosition: candidate.desiredPosition, location: candidate.location, yearsExperience: candidate.yearsExperience, desiredSalary: candidate.desiredSalary, desiredEmploymentType: candidate.desiredEmploymentType, skills: candidate.skills, match: job ? calculateMatchScore(candidate, job) : null, applied, invitedAccepted, contact: applied || invitedAccepted ? { email: candidate.user.email, phone: candidate.user.phone } : null };
+   return { id: candidate.id, fullName: candidate.user.fullName, headline: candidate.headline, desiredPosition: candidate.desiredPosition, location: candidate.location, yearsExperience: candidate.yearsExperience, desiredSalary: candidate.desiredSalary, desiredEmploymentType: candidate.desiredEmploymentType, skills: candidate.skills, match: job ? calculateMatchScore(candidate, job) : null, applied, invitation: job ? (candidate.talentInvitations[0] || null) : null, invitedAccepted, contact: applied || invitedAccepted ? { email: candidate.user.email, phone: candidate.user.phone } : null };
  }).sort((a, b) => (b.match?.score || 0) - (a.match?.score || 0));
  res.json({ success: true, data: { job, items } });
 }));
@@ -103,10 +103,24 @@ router.post('/talent/invite', validate(inviteSchema), asyncHandler(async (req, r
  const job = await prisma.job.findFirst({ where: { id: jobId, companyId: recruiter?.companyId } });
  const candidate = await prisma.candidate.findUnique({ where: { id: candidateId } });
  if (!recruiter || !job || !candidate || !candidate.isSearchable) throw new ApiError(404, 'Không tìm thấy ứng viên hoặc việc làm');
+ if (job.status !== 'PUBLISHED' || (job.deadline && job.deadline <= new Date())) throw new ApiError(409, 'Chỉ có thể gửi lời mời cho việc làm đang đăng tuyển và còn hạn');
  const message = String(req.body.message || '').trim() || null;
- const invitation = await prisma.talentInvitation.upsert({ where: { candidateId_recruiterUserId_jobId: { candidateId, recruiterUserId: req.user.id, jobId } }, create: { candidateId, recruiterUserId: req.user.id, jobId, message }, update: { status: 'PENDING', message, respondedAt: null } });
- await prisma.notification.create({ data: { userId: candidate.userId, type: 'TALENT_INVITATION', title: 'Bạn được mời ứng tuyển', content: message || `Nhà tuyển dụng mời bạn ứng tuyển vị trí ${job.title}.`, link: `/jobs/${job.id}` } });
- res.status(201).json({ success: true, data: invitation });
+ const existing = await prisma.talentInvitation.findUnique({ where: { candidateId_recruiterUserId_jobId: { candidateId, recruiterUserId: req.user.id, jobId } } });
+ if (existing?.status === 'PENDING') return res.json({ success: true, data: { ...existing, idempotent: true } });
+ if (existing) throw new ApiError(409, 'Ứng viên đã phản hồi lời mời cho việc làm này');
+ try {
+   const invitation = await prisma.$transaction(async (transaction) => {
+     const created = await transaction.talentInvitation.create({ data: { candidateId, recruiterUserId: req.user.id, jobId, message } });
+     await transaction.notification.create({ data: { userId: candidate.userId, type: 'TALENT_INVITATION', title: 'Bạn được mời ứng tuyển', content: message || `Nhà tuyển dụng mời bạn ứng tuyển vị trí ${job.title}.`, link: `/invitations/${created.id}` } });
+     return created;
+   });
+   res.status(201).json({ success: true, data: { ...invitation, idempotent: false } });
+ } catch (error) {
+   if (error?.code !== 'P2002') throw error;
+   const duplicate = await prisma.talentInvitation.findUnique({ where: { candidateId_recruiterUserId_jobId: { candidateId, recruiterUserId: req.user.id, jobId } } });
+   if (duplicate?.status === 'PENDING') return res.json({ success: true, data: { ...duplicate, idempotent: true } });
+   throw new ApiError(409, 'Ứng viên đã phản hồi lời mời cho việc làm này');
+ }
 }));
 
 router.get('/funnel/:jobId', validate(funnelSchema), asyncHandler(async (req, res) => {

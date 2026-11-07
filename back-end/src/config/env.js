@@ -53,6 +53,7 @@ module.exports = {
   refreshTokenExpiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN || '7d',
   refreshCookieName: process.env.REFRESH_COOKIE_NAME || 'job_connect_refresh',
   refreshCookieSameSite,
+  authRateLimitMax: Number(process.env.AUTH_RATE_LIMIT_MAX || 10),
   smtp: {
     host: process.env.SMTP_HOST,
     port: Number(process.env.SMTP_PORT || 587),
@@ -65,7 +66,7 @@ module.exports = {
   apiPublicUrl: publicUrl('API_PUBLIC_URL', 'http://localhost:5000'),
   uploadsDirectory: path.resolve(process.env.UPLOADS_DIRECTORY || path.join(__dirname, '../../uploads')),
   logosDirectory: path.resolve(process.env.LOGOS_DIRECTORY || path.join(__dirname, '../../public/logos')),
-  alertWorkerEnabled: process.env.ALERT_WORKER_ENABLED !== 'false',
+  alertWorkerEnabled: featureFlag('ALERT_WORKER_ENABLED'),
   alertWorkerCron: process.env.ALERT_WORKER_CRON || '* * * * *',
   corsOrigins: parseCorsOrigins(process.env.CORS_ORIGINS || 'http://localhost:5173'),
   geminiApiKey: process.env.GEMINI_API_KEY,

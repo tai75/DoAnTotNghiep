@@ -63,6 +63,33 @@ const invitationResponseSchema = z.object({
   params: z.object({ id: z.coerce.number().int().positive() }),
   query: z.object({})
 });
+const invitationListSchema = z.object({
+  body: z.object({}), params: z.object({}),
+  query: z.object({
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(50).default(10),
+    status: z.enum(['PENDING', 'ACCEPTED', 'DECLINED']).optional()
+  })
+});
+const invitationDetailSchema = z.object({
+  body: z.object({}), params: z.object({ id: z.coerce.number().int().positive() }), query: z.object({})
+});
+const invitationSelect = {
+  id: true, status: true, message: true, createdAt: true, respondedAt: true,
+  job: { select: {
+    id: true, title: true, location: true, employmentType: true, status: true, deadline: true,
+    company: { select: { id: true, name: true, logoUrl: true } }
+  } }
+};
+function invitationAvailability(invitation, now = new Date()) {
+  if (invitation.status !== 'PENDING') return { isActionable: false, unavailableReason: null };
+  if (invitation.job.status !== 'PUBLISHED') return { isActionable: false, unavailableReason: 'Việc làm không còn được đăng tuyển' };
+  if (invitation.job.deadline && invitation.job.deadline <= now) return { isActionable: false, unavailableReason: 'Lời mời đã hết hạn theo hạn ứng tuyển' };
+  return { isActionable: true, unavailableReason: null };
+}
+function serializeInvitation(invitation, now = new Date()) {
+  return { ...invitation, ...invitationAvailability(invitation, now) };
+}
 
 const skillsSchema = z.object({
   body: z.object({
@@ -116,13 +143,52 @@ router.patch('/me/alerts/:id', authenticate, authorize('CANDIDATE'), validate(al
   res.json({ success: true, data: updated });
 }));
 
+router.get('/me/invitations', authenticate, authorize('CANDIDATE'), validate(invitationListSchema), asyncHandler(async (req, res) => {
+  const candidate = await findCandidate(req.user.id);
+  const { page, limit, status } = req.query;
+  const where = { candidateId: candidate.id, ...(status ? { status } : {}) };
+  const [items, total, pendingCount] = await prisma.$transaction([
+    prisma.talentInvitation.findMany({ where, select: invitationSelect, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], skip: (page - 1) * limit, take: limit }),
+    prisma.talentInvitation.count({ where }),
+    prisma.talentInvitation.count({ where: { candidateId: candidate.id, status: 'PENDING' } })
+  ]);
+  const now = new Date();
+  res.json({ success: true, data: { items: items.map((item) => serializeInvitation(item, now)), page, limit, total, totalPages: Math.ceil(total / limit), pendingCount } });
+}));
+
+router.get('/me/invitations/:id', authenticate, authorize('CANDIDATE'), validate(invitationDetailSchema), asyncHandler(async (req, res) => {
+  const candidate = await findCandidate(req.user.id);
+  const invitation = await prisma.talentInvitation.findFirst({ where: { id: req.params.id, candidateId: candidate.id }, select: invitationSelect });
+  if (!invitation) throw new ApiError(404, 'Không tìm thấy lời mời');
+  res.json({ success: true, data: serializeInvitation(invitation) });
+}));
+
 router.patch('/me/invitations/:id', authenticate, authorize('CANDIDATE'), validate(invitationResponseSchema), asyncHandler(async (req, res) => {
   const candidate = await findCandidate(req.user.id);
   const status = req.body.status;
-  const invitation = await prisma.talentInvitation.findFirst({ where: { id: req.params.id, candidateId: candidate.id, status: 'PENDING' } });
+  const invitation = await prisma.talentInvitation.findFirst({ where: { id: req.params.id, candidateId: candidate.id }, select: { ...invitationSelect, recruiterUserId: true } });
   if (!invitation) throw new ApiError(404, 'Không tìm thấy lời mời');
-  const updated = await prisma.talentInvitation.update({ where: { id: invitation.id }, data: { status, respondedAt: new Date() } });
-  res.json({ success: true, data: updated });
+  if (invitation.status === status) return res.json({ success: true, data: { ...serializeInvitation(invitation), idempotent: true } });
+  if (invitation.status !== 'PENDING') throw new ApiError(409, 'Lời mời đã được phản hồi và không thể thay đổi trạng thái');
+  const availability = invitationAvailability(invitation);
+  if (status === 'ACCEPTED' && !availability.isActionable) throw new ApiError(409, availability.unavailableReason);
+  const result = await prisma.$transaction(async (transaction) => {
+    const claimed = await transaction.talentInvitation.updateMany({ where: { id: invitation.id, candidateId: candidate.id, status: 'PENDING' }, data: { status, respondedAt: new Date() } });
+    if (!claimed.count) return { current: await transaction.talentInvitation.findFirst({ where: { id: invitation.id, candidateId: candidate.id }, select: invitationSelect }), won: false };
+    const updated = await transaction.talentInvitation.findUnique({ where: { id: invitation.id }, select: invitationSelect });
+    await transaction.notification.create({ data: {
+      userId: invitation.recruiterUserId, type: 'TALENT_INVITATION_RESPONSE',
+      title: status === 'ACCEPTED' ? 'Ứng viên đã chấp nhận lời mời' : 'Ứng viên đã từ chối lời mời',
+      content: `${req.user.fullName} đã ${status === 'ACCEPTED' ? 'chấp nhận' : 'từ chối'} lời mời cho vị trí ${invitation.job.title}.`,
+      link: `/recruiter/talent?jobId=${invitation.job.id}&candidateId=${candidate.id}`
+    } });
+    return { current: updated, won: true };
+  });
+  if (!result.won) {
+    if (result.current?.status === status) return res.json({ success: true, data: { ...serializeInvitation(result.current), idempotent: true } });
+    throw new ApiError(409, 'Lời mời vừa được phản hồi bởi một yêu cầu khác');
+  }
+  res.json({ success: true, data: { ...serializeInvitation(result.current), idempotent: false } });
 }));
 
 router.delete('/me/alerts/:id', authenticate, authorize('CANDIDATE'), validate(alertDeleteSchema), asyncHandler(async (req, res) => {
@@ -716,3 +782,4 @@ module.exports.hasValidSignature = hasValidSignature;
 module.exports.canSaveJob = canSaveJob;
 module.exports.httpUrl = httpUrl;
 module.exports.buildCompleteness = buildCompleteness;
+module.exports.invitationAvailability = invitationAvailability;

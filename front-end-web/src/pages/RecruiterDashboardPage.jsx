@@ -1,14 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { DndContext, useDraggable, useDroppable } from '@dnd-kit/core'
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { recruiterApi } from '../services/api'
 import { useAuth } from '../context/auth'
 import AppShell from '../components/AppShell'
+import {
+  applicationStatusLabels,
+  canRecruiterTransition,
+  isTerminalApplicationStatus,
+  recruiterStatusOptions
+} from '../utils/applicationStatus'
 import '../recruiter.css'
 
 const jobStatuses = { DRAFT: 'Nháp', PENDING: 'Chờ duyệt', PUBLISHED: 'Đang đăng', CLOSED: 'Đã đóng', REJECTED: 'Bị từ chối' }
-const applicationStatuses = { APPLIED: 'Mới', REVIEWING: 'Đang xem', SHORTLISTED: 'Đã chọn', INTERVIEWING: 'Phỏng vấn', OFFERED: 'Đề nghị', ACCEPTED: 'Đã nhận', REJECTED: 'Từ chối', WITHDRAWN: 'Đã rút' }
+const applicationStatuses = applicationStatusLabels
 const chartColors = ['#2563eb', '#8b5cf6', '#f59e0b', '#10b981', '#ef4444', '#64748b']
 const ASSET_URL = (import.meta.env.VITE_ASSET_URL || '').replace(/\/$/, '')
 
@@ -25,17 +31,18 @@ function PipelineColumn({ status, applications, onOpen, onToggle }) {
 }
 
 function PipelineCard({ application, onOpen, onToggle }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: String(application.id) })
+  const terminal = isTerminalApplicationStatus(application.status)
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: String(application.id), disabled: terminal })
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined
   const knockoutFailed = application.answers?.some(({ answer, question }) => question.isKnockout && question.idealAnswer && answer.toLowerCase() !== question.idealAnswer.toLowerCase())
-  return <article ref={setNodeRef} style={style} className={`pipeline-card ${isDragging ? 'dragging' : ''}`} {...attributes} {...listeners} onClick={() => onOpen(application)}><div className="pipeline-card-head"><input type="checkbox" onClick={(event) => event.stopPropagation()} onChange={() => onToggle(application.id)} /><span className="pipeline-avatar">{application.candidate.user.fullName.charAt(0)}</span><strong>{application.candidate.user.fullName}</strong></div><div className="pipeline-card-meta"><span>Match: {Number(application.matchScore?.score || 0).toFixed(0)}/100</span><time>{new Date(application.appliedAt).toLocaleDateString('vi-VN')}</time></div>{knockoutFailed && <small className="knockout-warning">Không đạt câu hỏi loại ngay</small>}</article>
+  return <article ref={setNodeRef} style={style} className={`pipeline-card ${isDragging ? 'dragging' : ''}`} {...attributes} {...listeners} onClick={() => onOpen(application)}><div className="pipeline-card-head"><input type="checkbox" disabled={terminal} onClick={(event) => event.stopPropagation()} onChange={() => onToggle(application.id)} /><span className="pipeline-avatar">{application.candidate.user.fullName.charAt(0)}</span><strong>{application.candidate.user.fullName}</strong></div><div className="pipeline-card-meta"><span>Match: {Number(application.matchScore?.score || 0).toFixed(0)}/100</span><time>{new Date(application.appliedAt).toLocaleDateString('vi-VN')}</time></div>{knockoutFailed && <small className="knockout-warning">Không đạt câu hỏi loại ngay</small>}</article>
 }
 
 function ApplicationDrawer({ application, onClose, onNoteAdded, onNoteDeleted, onDownload, onStatusChange, onMessage }) {
   const [note, setNote] = useState('')
   if (!application) return null
   const knockoutAnswers = application.answers?.filter(({ question }) => question.isKnockout) || []
-  return <aside className="pipeline-drawer"><button className="close-detail" onClick={onClose}>×</button><div className="pipeline-drawer-profile"><span className="pipeline-avatar large">{application.candidate.user.fullName.charAt(0)}</span><h2>{application.candidate.user.fullName}</h2><p>{application.candidate.headline || 'Chưa cập nhật tiêu đề hồ sơ'}</p><p>{application.candidate.user.phone || ''}</p></div><button className="secondary-button" onClick={onDownload}>Tải CV</button><button className="secondary-button" onClick={onMessage}>Nhắn tin ứng viên</button><h3>Hồ sơ</h3><p>{application.candidate.bio || 'Chưa có giới thiệu.'}</p><p>Kinh nghiệm: {application.candidate.yearsExperience ?? '—'} năm</p><div className="candidate-skills">{application.candidate.skills?.map(({ skill }) => <span key={skill.id}>{skill.name}</span>)}</div><h3>Câu trả lời sàng lọc</h3>{application.answers?.length ? application.answers.map(({ question, answer }) => <div className={question.isKnockout ? 'screening-answer knockout-answer' : 'screening-answer'} key={question.id}><strong>{question.question}</strong><span>{answer}</span></div>) : <p>Không có câu trả lời.</p>}{knockoutAnswers.some(({ answer, question }) => question.idealAnswer && answer.toLowerCase() !== question.idealAnswer.toLowerCase()) && <p className="knockout-warning">Ứng viên không đạt ít nhất một câu hỏi loại ngay.</p>}<h3>Timeline</h3><div className="pipeline-timeline">{application.history?.map((entry) => <div key={entry.id}><b>{applicationStatuses[entry.toStatus]}</b><time>{new Date(entry.createdAt).toLocaleString('vi-VN')}</time>{entry.note && <span>{entry.note}</span>}</div>)}</div><h3>Ghi chú nội bộ</h3>{application.notes?.map((item) => <div className="internal-note" key={item.id}><p>{item.content}</p><small>{item.author.fullName} · {new Date(item.createdAt).toLocaleString('vi-VN')}</small><button onClick={() => onNoteDeleted(item.id)}>Xóa</button></div>)}<form onSubmit={(event) => { event.preventDefault(); if (note.trim()) onNoteAdded(note.trim()).then(() => setNote('')) }}><textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="Thêm ghi chú nội bộ..." /><button className="primary-button">Thêm ghi chú</button></form><label>Đổi trạng thái<select value={application.status} onChange={(event) => onStatusChange(application, event.target.value)}>{Object.entries(applicationStatuses).filter(([status]) => status !== 'WITHDRAWN').map(([status, label]) => <option value={status} key={status}>{label}</option>)}</select></label></aside>
+  return <aside className="pipeline-drawer"><button className="close-detail" onClick={onClose}>×</button><div className="pipeline-drawer-profile"><span className="pipeline-avatar large">{application.candidate.user.fullName.charAt(0)}</span><h2>{application.candidate.user.fullName}</h2><p>{application.candidate.headline || 'Chưa cập nhật tiêu đề hồ sơ'}</p><p>{application.candidate.user.phone || ''}</p></div><button className="secondary-button" onClick={onDownload}>Tải CV</button><button className="secondary-button" onClick={onMessage}>Nhắn tin ứng viên</button><h3>Hồ sơ</h3><p>{application.candidate.bio || 'Chưa có giới thiệu.'}</p><p>Kinh nghiệm: {application.candidate.yearsExperience ?? '—'} năm</p><div className="candidate-skills">{application.candidate.skills?.map(({ skill }) => <span key={skill.id}>{skill.name}</span>)}</div><h3>Câu trả lời sàng lọc</h3>{application.answers?.length ? application.answers.map(({ question, answer }) => <div className={question.isKnockout ? 'screening-answer knockout-answer' : 'screening-answer'} key={question.id}><strong>{question.question}</strong><span>{answer}</span></div>) : <p>Không có câu trả lời.</p>}{knockoutAnswers.some(({ answer, question }) => question.idealAnswer && answer.toLowerCase() !== question.idealAnswer.toLowerCase()) && <p className="knockout-warning">Ứng viên không đạt ít nhất một câu hỏi loại ngay.</p>}<h3>Timeline</h3><div className="pipeline-timeline">{application.history?.map((entry) => <div key={entry.id}><b>{applicationStatuses[entry.toStatus]}</b><time>{new Date(entry.createdAt).toLocaleString('vi-VN')}</time>{entry.note && <span>{entry.note}</span>}</div>)}</div><h3>Ghi chú nội bộ</h3>{application.notes?.map((item) => <div className="internal-note" key={item.id}><p>{item.content}</p><small>{item.author.fullName} · {new Date(item.createdAt).toLocaleString('vi-VN')}</small><button onClick={() => onNoteDeleted(item.id)}>Xóa</button></div>)}<form onSubmit={(event) => { event.preventDefault(); if (note.trim()) onNoteAdded(note.trim()).then(() => setNote('')) }}><textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="Thêm ghi chú nội bộ..." /><button className="primary-button">Thêm ghi chú</button></form><label>Đổi trạng thái<select value={application.status} disabled={isTerminalApplicationStatus(application.status)} onChange={(event) => onStatusChange(application, event.target.value)}>{recruiterStatusOptions(application.status).map((status) => <option value={status} key={status}>{applicationStatuses[status]}</option>)}</select></label></aside>
 }
 
 function JobPipeline({ job, onError }) {
@@ -54,13 +61,23 @@ function JobPipeline({ job, onError }) {
   }, [job.id, minScore, onError, sort])
   useEffect(() => { load() }, [load])
   async function changeStatus(application, status) {
+    if (!canRecruiterTransition(application.status, status) || application.status === status) return
     const previous = applications
     setApplications((current) => current.map((item) => item.id === application.id ? { ...item, status } : item))
     try {
-      const updated = await recruiterApi.updateApplicationStatus(application.id, status)
+      const updated = await recruiterApi.updateApplicationStatus(application.id, status, undefined, application.status)
       setApplications((current) => current.map((item) => item.id === application.id ? { ...item, ...updated } : item))
       setSelected((current) => current?.id === application.id ? { ...current, status, history: [...(current.history || []), { id: Date.now(), toStatus: status, createdAt: new Date().toISOString() }] } : current)
-    } catch (error) { setApplications(previous); onError(error.message) }
+    } catch (error) {
+      if (error.status === 409) {
+        setSelected(null)
+        await load()
+        onError('Trạng thái đơn ứng tuyển đã thay đổi. Dữ liệu mới nhất đã được tải lại.')
+      } else {
+        setApplications(previous)
+        onError(error.message)
+      }
+    }
   }
   async function addNote(content) {
     const created = await recruiterApi.addApplicationNote(selected.id, content)
@@ -74,10 +91,22 @@ function JobPipeline({ job, onError }) {
   async function bulkReject() {
     if (!selectedIds.length) return
     const message = window.prompt('Lời nhắn từ chối (tùy chọn):', 'Cảm ơn bạn đã quan tâm. Hiện tại chúng tôi chưa thể tiếp tục hồ sơ.') || undefined
-    try { await recruiterApi.bulkRejectApplications(selectedIds, message); setApplications((current) => current.map((item) => selectedIds.includes(item.id) ? { ...item, status: 'REJECTED' } : item)); setSelectedIds([]) } catch (error) { onError(error.message) }
+    try {
+      const selectedApplications = applications.filter((application) => selectedIds.includes(application.id))
+      const result = await recruiterApi.bulkRejectApplications(selectedApplications, message)
+      const changedIds = result.applicationIds || []
+      setApplications((current) => current.map((item) => changedIds.includes(item.id) ? { ...item, status: 'REJECTED' } : item))
+      setSelectedIds([])
+    } catch (error) {
+      if (error.status === 409) {
+        await load()
+        setSelectedIds([])
+        onError('Một hoặc nhiều đơn đã thay đổi. Dữ liệu mới nhất đã được tải lại.')
+      } else onError(error.message)
+    }
   }
   const grouped = statuses.reduce((result, status) => { result[status] = applications.filter((application) => application.status === status); return result }, {})
-  return <div className="pipeline-wrap"><div className="pipeline-toolbar"><label>Điểm match tối thiểu<input type="number" min="0" max="100" value={minScore} onChange={(event) => setMinScore(event.target.value)} /></label><label>Sắp xếp<select value={sort} onChange={(event) => setSort(event.target.value)}><option value="score">Điểm cao nhất</option><option value="newest">Mới nhất</option></select></label><button className="danger-button" disabled={!selectedIds.length} onClick={bulkReject}>Từ chối đã chọn ({selectedIds.length})</button></div><DndContext onDragEnd={({ active, over }) => { if (!over || !statuses.includes(over.id)) return; const application = applications.find((item) => String(item.id) === String(active.id)); if (application && application.status !== over.id) changeStatus(application, over.id) }}><div className="pipeline-board">{statuses.map((status) => <PipelineColumn key={status} status={status} applications={grouped[status]} onOpen={(application) => setSelected(application)} onToggle={(id) => setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])} />)}</div></DndContext>{selected && <ApplicationDrawer application={selected} onClose={() => setSelected(null)} onNoteAdded={addNote} onNoteDeleted={deleteNote} onDownload={() => selected.resume && recruiterApi.downloadResume(selected.resume.id, selected.resume.fileName).catch((error) => onError(error.message))}   onStatusChange={changeStatus} onMessage={async () => { try { await recruiterApi.createConversation(selected.id); navigate('/messages') } catch (error) { onError(error.message) } }} />}</div>
+  return <div className="pipeline-wrap"><div className="pipeline-toolbar"><label>Điểm match tối thiểu<input type="number" min="0" max="100" value={minScore} onChange={(event) => setMinScore(event.target.value)} /></label><label>Sắp xếp<select value={sort} onChange={(event) => setSort(event.target.value)}><option value="score">Điểm cao nhất</option><option value="newest">Mới nhất</option></select></label><button className="danger-button" disabled={!selectedIds.length} onClick={bulkReject}>Từ chối đã chọn ({selectedIds.length})</button></div><DndContext onDragEnd={({ active, over }) => { if (!over || !statuses.includes(over.id)) return; const application = applications.find((item) => String(item.id) === String(active.id)); if (application && canRecruiterTransition(application.status, over.id) && application.status !== over.id) changeStatus(application, over.id) }}><div className="pipeline-board">{statuses.map((status) => <PipelineColumn key={status} status={status} applications={grouped[status]} onOpen={(application) => setSelected(application)} onToggle={(id) => setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])} />)}</div></DndContext>{selected && <ApplicationDrawer application={selected} onClose={() => setSelected(null)} onNoteAdded={addNote} onNoteDeleted={deleteNote} onDownload={() => selected.resume && recruiterApi.downloadResume(selected.resume.id, selected.resume.fileName).catch((error) => onError(error.message))}   onStatusChange={changeStatus} onMessage={async () => { try { await recruiterApi.createConversation(selected.id); navigate('/messages') } catch (error) { onError(error.message) } }} />}</div>
 }
 
 function JobForm({ initialJob, skills, onSave, onAutoSave, onSubmitForReview, onCancel, onSuggest }) {
@@ -123,7 +152,9 @@ function SuggestedCandidates({ result, onClose, onSearch }) {
 
 export default function RecruiterDashboardPage() {
   const { session, logout } = useAuth()
-  const [section, setSection] = useState('dashboard')
+  const [searchParams] = useSearchParams()
+  const requestedSection = searchParams.get('section')
+  const [section, setSection] = useState(() => ['dashboard', 'jobs', 'applications', 'company'].includes(requestedSection) ? requestedSection : 'dashboard')
   const [stats, setStats] = useState(null)
   const [company, setCompany] = useState(null)
   const [jobs, setJobs] = useState([])
@@ -137,6 +168,15 @@ export default function RecruiterDashboardPage() {
   const [suggestedCandidates, setSuggestedCandidates] = useState(null)
   const [pipelineJob, setPipelineJob] = useState(null)
 
+  useEffect(() => {
+    const statusSelect = document.querySelector('#application-status')
+    if (!statusSelect || !selectedApplication) return
+    const terminal = isTerminalApplicationStatus(selectedApplication.status)
+    statusSelect.disabled = terminal
+    const saveButton = statusSelect.parentElement?.querySelector('button')
+    if (saveButton) saveButton.disabled = terminal
+  }, [selectedApplication])
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -145,10 +185,28 @@ export default function RecruiterDashboardPage() {
     } catch (actionError) { setError(actionError.message) } finally { setLoading(false) }
   }, [])
   useEffect(() => { load() }, [load])
+  const loadApplications = useCallback(async () => {
+    try {
+      const result = await recruiterApi.applications({ status: applicationStatus })
+      setApplications(result.items || [])
+    } catch (actionError) {
+      setError(actionError.message)
+    }
+  }, [applicationStatus])
   useEffect(() => {
     if (section !== 'applications') return
     recruiterApi.applications({ status: applicationStatus }).then((result) => setApplications(result.items || [])).catch((actionError) => setError(actionError.message))
   }, [section, applicationStatus])
+  useEffect(() => {
+    const applicationId = Number(searchParams.get('applicationId'))
+    if (section === 'applications' && applicationId && applications.length) {
+      setSelectedApplication(applications.find((application) => application.id === applicationId) || null)
+    }
+  }, [applications, searchParams, section])
+  useEffect(() => {
+    const jobId = Number(searchParams.get('jobId'))
+    if (section === 'jobs' && jobId && jobs.length) setEditingJob(jobs.find((job) => job.id === jobId) || null)
+  }, [jobs, searchParams, section])
   const companyForm = useMemo(() => company ? { name: company.name || '', description: company.description || '', website: company.website || '', address: company.address || '', employeeCount: company.employeeCount || '', industry: company.industry || '' } : null, [company])
   async function saveCompany(event) {
     event.preventDefault()
@@ -186,11 +244,18 @@ export default function RecruiterDashboardPage() {
     return result.description || result.data?.description || ''
   }
   async function updateApplication(application, status, note = '') {
+    if (!canRecruiterTransition(application.status, status) || application.status === status) return
     try {
-      await recruiterApi.updateApplicationStatus(application.id, status, note)
-      setApplications((current) => current.map((item) => item.id === application.id ? { ...item, status } : item))
-      setSelectedApplication(note ? null : { ...application, status })
-    } catch (actionError) { setError(actionError.message) }
+      const updated = await recruiterApi.updateApplicationStatus(application.id, status, note, application.status)
+      setApplications((current) => current.map((item) => item.id === application.id ? { ...item, ...updated } : item))
+      setSelectedApplication(note ? null : { ...application, ...updated })
+    } catch (actionError) {
+      if (actionError.status === 409) {
+        await loadApplications()
+        setSelectedApplication(null)
+        setError('Trạng thái đơn ứng tuyển đã thay đổi. Dữ liệu mới nhất đã được tải lại.')
+      } else setError(actionError.message)
+    }
   }
   async function showSuggestions(job, params = {}) {
     try { setSuggestedCandidates(await recruiterApi.recommendations(job.id, params)) } catch (actionError) { setError(actionError.message) }

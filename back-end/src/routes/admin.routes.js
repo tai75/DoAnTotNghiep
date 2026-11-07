@@ -247,7 +247,7 @@ router.patch('/jobs/:id/moderation', validate(moderationSchema), asyncHandler(as
           type: 'JOB_MODERATION',
           title: req.body.status === 'PUBLISHED' ? 'Tin tuyển dụng đã được duyệt' : 'Tin tuyển dụng bị từ chối',
           content: `Tin "${job.title}" ${req.body.status === 'PUBLISHED' ? 'đã được đăng' : 'bị từ chối'} bởi quản trị viên.`,
-          link: `/recruiter/jobs/${job.id}`
+          link: `/recruiter?section=jobs&jobId=${job.id}`
         }))
       });
     }

@@ -13,7 +13,7 @@ const { sendEmail } = require('../services/mail.service');
 
 const authRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 10,
+  limit: config.authRateLimitMax,
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: 'Quá nhiều yêu cầu xác thực, vui lòng thử lại sau.' }

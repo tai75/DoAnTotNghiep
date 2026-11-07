@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const { PrismaClient } = require('@prisma/client');
 
 const EXPECTED_DATABASE = 'job_connect_qa01_e2e';
+const EXPECTED_USER = 'job_connect_qa01';
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 
 function qaUrl() {
@@ -12,8 +13,8 @@ function qaUrl() {
   if (!raw) throw new Error('QA01_DATABASE_URL is required; the development .env is never used by QA-01.');
   const parsed = new URL(raw);
   const database = decodeURIComponent(parsed.pathname.replace(/^\//, ''));
-  if (parsed.protocol !== 'mysql:' || !LOOPBACK_HOSTS.has(parsed.hostname) || database !== EXPECTED_DATABASE) {
-    throw new Error(`QA-01 safety stop: expected mysql loopback/${EXPECTED_DATABASE}, received ${parsed.hostname}/${database || '<empty>'}.`);
+  if (parsed.protocol !== 'mysql:' || !LOOPBACK_HOSTS.has(parsed.hostname) || database !== EXPECTED_DATABASE || decodeURIComponent(parsed.username) !== EXPECTED_USER) {
+    throw new Error(`QA-01 safety stop: expected mysql loopback/${EXPECTED_DATABASE} with the dedicated QA user.`);
   }
   return parsed;
 }
@@ -33,6 +34,7 @@ async function assertQaTarget(prisma) {
   const url = qaUrl();
   const [identity] = await prisma.$queryRawUnsafe('SELECT DATABASE() databaseName, @@hostname serverHostname, @@port serverPort, CURRENT_USER() currentUser');
   if (identity.databaseName !== EXPECTED_DATABASE) throw new Error(`QA-01 safety stop: connected to ${identity.databaseName}.`);
+  if (!String(identity.currentUser).startsWith(`${EXPECTED_USER}@`)) throw new Error('QA-01 safety stop: connection is not using the dedicated QA user.');
   return { database: identity.databaseName, host: url.hostname, port: Number(url.port || 3306), serverHostname: identity.serverHostname, currentUser: identity.currentUser };
 }
 
