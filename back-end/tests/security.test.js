@@ -114,7 +114,7 @@ describe('security hardening', () => {
   it('rejects logo content whose signature does not match its declared image type', () => {
     const filePath = path.join(os.tmpdir(), `job-connect-logo-${process.pid}.tmp`)
     try {
-      fs.writeFileSync(filePath, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+      fs.writeFileSync(filePath, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'))
       expect(companiesRoutes.hasValidLogoSignature(filePath, 'image/png')).toBe(true)
       fs.writeFileSync(filePath, Buffer.from('<script>alert(1)</script>'))
       expect(companiesRoutes.hasValidLogoSignature(filePath, 'image/png')).toBe(false)

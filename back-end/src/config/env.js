@@ -43,6 +43,13 @@ function featureFlag(name, fallback = false) {
   throw new Error(`${name} must be true or false`);
 }
 
+const applicationRoot = path.resolve(__dirname, '../..');
+const repositoryRoot = path.resolve(applicationRoot, '..');
+const storageRoot = path.resolve(process.env.STORAGE_ROOT || path.join(repositoryRoot, '..', 'job-connect-storage'));
+if (nodeEnv === 'production' && (!process.env.STORAGE_ROOT || !path.isAbsolute(process.env.STORAGE_ROOT))) {
+  throw new Error('STORAGE_ROOT must be an absolute path in production');
+}
+
 module.exports = {
   nodeEnv,
   port: Number(process.env.PORT || 5000),
@@ -64,8 +71,17 @@ module.exports = {
   },
   frontendUrl: publicUrl('FRONTEND_URL', 'http://localhost:5173'),
   apiPublicUrl: publicUrl('API_PUBLIC_URL', 'http://localhost:5000'),
-  uploadsDirectory: path.resolve(process.env.UPLOADS_DIRECTORY || path.join(__dirname, '../../uploads')),
-  logosDirectory: path.resolve(process.env.LOGOS_DIRECTORY || path.join(__dirname, '../../public/logos')),
+  repositoryRoot,
+  applicationRoot,
+  storageRoot,
+  storageDirectories: {
+    resumes: path.join(storageRoot, 'resumes'),
+    logos: path.join(storageRoot, 'logos'),
+    temporary: path.join(storageRoot, 'tmp')
+  },
+  // Read-only compatibility roots. New writes never use these paths.
+  legacyUploadsDirectory: path.resolve(process.env.UPLOADS_DIRECTORY || path.join(applicationRoot, 'uploads')),
+  legacyLogosDirectory: path.resolve(process.env.LOGOS_DIRECTORY || path.join(applicationRoot, 'public/logos')),
   alertWorkerEnabled: featureFlag('ALERT_WORKER_ENABLED'),
   alertWorkerCron: process.env.ALERT_WORKER_CRON || '* * * * *',
   corsOrigins: parseCorsOrigins(process.env.CORS_ORIGINS || 'http://localhost:5173'),

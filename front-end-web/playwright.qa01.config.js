@@ -1,4 +1,6 @@
 import { defineConfig } from '@playwright/test'
+import os from 'node:os'
+import path from 'node:path'
 
 const required = ['QA01_DATABASE_URL', 'QA01_PASSWORD', 'QA01_JWT_SECRET']
 const missing = required.filter((name) => !process.env[name])
@@ -27,7 +29,7 @@ export default defineConfig({
   projects: [{ name: 'qa01-chromium', use: { viewport: { width: 1440, height: 900 } } }],
   webServer: [
     {
-      command: 'npm run qa01:db:reset-seed && npm run qa01:server',
+      command: 'npm run qa01:db:reset-seed && npm run qa01:storage:reset && npm run qa01:server',
       cwd: '../back-end',
       url: 'http://127.0.0.1:5101/api/health/ready',
       reuseExistingServer: false,
@@ -52,6 +54,7 @@ export default defineConfig({
         SMTP_USER: '',
         SMTP_PASSWORD: '',
         GEMINI_API_KEY: '',
+        STORAGE_ROOT: path.join(os.tmpdir(), 'job-connect-qa01-storage'),
       },
     },
     {

@@ -1,14 +1,13 @@
 const { z } = require('zod');
 const prisma = require('../config/prisma');
-const config = require('../config/env');
 const asyncHandler = require('../utils/asyncHandler');
 const validate = require('../middleware/validate');
 const { authenticate, authorize } = require('../middleware/auth');
 const ApiError = require('../utils/apiError');
 const multer = require('multer');
-const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
+const storage = require('../storage/localStorage');
+const { validLogo } = require('../storage/fileValidation');
 
 const idSchema = z.object({
   body: z.object({}),
@@ -42,19 +41,12 @@ const updateSchema = z.object({
 });
 
 const router = require('express').Router();
-const uploadsDirectory = config.logosDirectory;
 const allowedLogoTypes = new Map([
   ['image/jpeg', ['.jpg', '.jpeg']],
   ['image/png', ['.png']]
 ]);
 const logoUpload = multer({
-  storage: multer.diskStorage({
-    destination: (req, file, callback) => {
-      fs.mkdirSync(uploadsDirectory, { recursive: true });
-      callback(null, uploadsDirectory);
-    },
-    filename: (req, file, callback) => callback(null, `${crypto.randomBytes(16).toString('hex')}${path.extname(file.originalname).toLowerCase()}`)
-  }),
+  storage: multer.memoryStorage(),
   limits: { fileSize: 2 * 1024 * 1024 },
   fileFilter: (req, file, callback) => {
     const extensions = allowedLogoTypes.get(file.mimetype);
@@ -65,10 +57,9 @@ const logoUpload = multer({
   }
 });
 
-function hasValidLogoSignature(filePath, mimeType) {
-  const header = fs.readFileSync(filePath).subarray(0, 8);
-  if (mimeType === 'image/png') return header.equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
-  return header.length >= 3 && header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff;
+function hasValidLogoSignature(fileOrBuffer, mimeType) {
+  const buffer = Buffer.isBuffer(fileOrBuffer) ? fileOrBuffer : require('fs').readFileSync(fileOrBuffer);
+  return validLogo(buffer, mimeType);
 }
 
 router.get('/me', authenticate, authorize('RECRUITER'), asyncHandler(async (req, res) => {
@@ -148,18 +139,30 @@ router.post('/me/logo', authenticate, authorize('RECRUITER'), (req, res, next) =
     return res.status(400).json({ success: false, message: error.message || 'Logo không hợp lệ' });
   });
 }, asyncHandler(async (req, res) => {
+  let newKey;
   try {
     if (!req.file) throw new ApiError(400, 'Vui lòng chọn logo');
-    if (!hasValidLogoSignature(req.file.path, req.file.mimetype)) throw new ApiError(400, 'Nội dung logo không đúng định dạng');
+    if (!hasValidLogoSignature(req.file.buffer, req.file.mimetype)) throw new ApiError(400, 'Nội dung logo không đúng định dạng');
     const recruiter = await prisma.recruiter.findUnique({ where: { userId: req.user.id } });
     if (!recruiter) throw new ApiError(403, 'Tài khoản chưa được liên kết với nhà tuyển dụng');
+    const currentCompany = await prisma.company.findUnique({ where: { id: recruiter.companyId }, select: { logoUrl: true } });
+    newKey = storage.createKey(req.file.mimetype === 'image/png' ? '.png' : '.jpg');
+    await storage.put(storage.namespaces.logos, newKey, req.file.buffer);
     const company = await prisma.company.update({
       where: { id: recruiter.companyId },
-      data: { logoUrl: `/assets/logos/${req.file.filename}` }
+      data: { logoUrl: `/assets/logos/${newKey}` }
     });
+    if (currentCompany?.logoUrl && currentCompany.logoUrl !== company.logoUrl) {
+      const remainingReferences = await prisma.company.count({ where: { logoUrl: currentCompany.logoUrl } });
+      if (!remainingReferences) {
+        await storage.removeManaged(storage.namespaces.logos, currentCompany.logoUrl).catch((error) => {
+          console.error({ name: error.name, code: error.code, component: 'logo-cleanup', companyId: company.id });
+        });
+      }
+    }
     res.json({ success: true, data: company });
   } catch (error) {
-    if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+    if (newKey) await storage.removeManaged(storage.namespaces.logos, newKey).catch(() => {});
     throw error;
   }
 }));

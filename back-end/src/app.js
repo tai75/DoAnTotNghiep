@@ -20,6 +20,7 @@ const notificationsRoutes = require('./routes/notifications.routes');
 const recruitersRoutes = require('./routes/recruiters.routes');
 const recommendationsRoutes = require('./routes/recommendations.routes');
 const conversationsRoutes = require('./routes/conversations.routes');
+const storageRoutes = require('./routes/storage.routes');
 
 const app = express();
 
@@ -51,8 +52,8 @@ app.use('/api', rateLimit({
 app.use(express.json({ limit: '2mb' }));
 morgan.token('safe-path', (req) => req.path);
 app.use(morgan(':method :safe-path :status :response-time ms'));
-app.use('/assets/logos', express.static(config.logosDirectory, { index: false, fallthrough: true }));
-app.use('/assets', express.static(path.join(__dirname, '../public')));
+app.use('/assets', storageRoutes);
+app.use('/assets', express.static(path.join(__dirname, '../public'), { index: false, fallthrough: true }));
 
 app.get('/api/health', (req, res) => {
   res.json({ success: true, message: 'Job Connect API is running', timestamp: new Date().toISOString() });

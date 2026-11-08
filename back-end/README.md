@@ -15,7 +15,7 @@ npm run dev
 ```
 
 Luồng `db:migrate` ở trên chỉ dành cho database local trắng hoặc database phát triển cô lập
-được phép tạo migration mới. Repository hiện có 16 migration đã được kiểm kê và chuẩn hóa LF,
+được phép tạo migration mới. Repository hiện có 17 migration đã được kiểm kê và chuẩn hóa LF,
 nhưng migration chain canonical LF chưa được rehearsal lại trên MySQL trắng.
 
 Development database hiện có dữ liệu nhưng chưa có bảng `_prisma_migrations`. Không dùng
@@ -26,6 +26,35 @@ hoạch database safety gate, sau backup/restore rehearsal và phê duyệt riê
 `JWT_SECRET`, `DATABASE_URL` là biến bắt buộc; server sẽ từ chối khởi động nếu thiếu.
 `CORS_ORIGINS` nhận nhiều origin, phân tách bằng dấu phẩy.
 Seed demo không chạy trong production và cần `ADMIN_SEED_PASSWORD`.
+
+### Local persistent storage
+
+CV và logo mới được lưu dưới `STORAGE_ROOT/resumes` và `STORAGE_ROOT/logos` bằng UUID storage
+key, không dùng tên file phía client. CV không được public; download luôn đi qua API có RBAC.
+Logo public giữ contract `/assets/logos/:key` và được trả về với MIME cố định cùng `nosniff`.
+Nếu chạy nhiều API instance, tất cả instance phải mount cùng một persistent volume tại cùng đường
+dẫn. Local filesystem không tự nhân bản dữ liệu giữa các host.
+
+Reconciliation chỉ đọc và không xóa file:
+
+```powershell
+npm run storage:reconcile
+```
+
+Backup storage phải được chạy trong maintenance window/quiesced writes và ghép với một database
+snapshot nhất quán. Thư mục đích phải chưa tồn tại; manifest chứa SHA-256 và snapshot ID:
+
+```powershell
+npm run storage:backup -- --destination D:\backups\job-connect-files-20261107 --database-snapshot-id db-20261107-120000
+npm run storage:verify -- --source D:\backups\job-connect-files-20261107
+$env:ALLOW_STORAGE_RESTORE='true'
+npm run storage:restore -- --source D:\backups\job-connect-files-20261107 --target D:\restore-rehearsal\job-connect-files --database-snapshot-id db-20261107-120000
+```
+
+Restore được cung cấp qua module vận hành và chỉ chấp nhận target rỗng sau khi toàn bộ checksum
+backup hợp lệ. Luôn rehearsal vào QA volume mới, đối chiếu `databaseSnapshotId`, rồi mới đổi mount;
+không restore đè lên volume đang hoạt động. File legacy chỉ được đọc tương thích, không tự động
+di chuyển hoặc xóa.
 
 Health checks: `GET /api/health/live` (process) và `GET /api/health/ready` (MySQL readiness).
 
@@ -84,17 +113,19 @@ SameSite và Secure ở production.
 
 ## Staging
 
-Không dùng `db:push` hoặc `migrate dev` cho staging. Repository đã có baseline và đủ 16 migration
+Không dùng `db:push` hoặc `migrate dev` cho staging. Repository đã có baseline và đủ 17 migration
 canonical LF, nhưng chưa có bằng chứng blank-chain rehearsal sau bước chuẩn hóa LF; vì vậy staging
 chưa GO. Chỉ dùng `npm run db:migrate:deploy` sau khi chain canonical vượt qua rehearsal trên MySQL
-test cô lập và các safety gate được phê duyệt. File upload cần persistent volume qua
-`UPLOADS_DIRECTORY` và `LOGOS_DIRECTORY`. Tài khoản synthetic staging được chuẩn bị bằng
+test cô lập và các safety gate được phê duyệt. File upload cần một persistent volume dùng chung
+qua `STORAGE_ROOT`; production sẽ từ chối khởi động nếu biến này thiếu, trỏ vào source tree hoặc
+không cho phép write/rename/delete. `UPLOADS_DIRECTORY` và `LOGOS_DIRECTORY` chỉ là đường dẫn
+đọc tương thích cho file legacy. Tài khoản synthetic staging được chuẩn bị bằng
 `npm run db:seed:staging` với guardrail trong `.env.example`; không chạy seed nếu chưa xác nhận đúng database.
 
 ## Database
 
 - Schema nguồn: `prisma/schema.prisma`
-- Migration: `prisma/migrations/` — 16 migration canonical LF đã được kiểm kê
+- Migration: `prisma/migrations/` — 17 migration canonical LF đã được kiểm kê
 - Tạo database MySQL ban đầu: `database/init.sql`
 - Hướng dẫn: `database/README.md`
 

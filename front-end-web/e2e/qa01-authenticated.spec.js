@@ -57,6 +57,49 @@ test.describe.serial('QA-01 isolated authenticated E2E', () => {
     await Promise.all([anonymous.dispose(), candidate.context.dispose(), recruiter.context.dispose(), admin.context.dispose()])
   })
 
+  test('synthetic CV and logo lifecycle uses isolated durable storage', async () => {
+    const candidate = await login('candidate')
+    const recruiter = await login('recruiter')
+    const pdf = Buffer.from('%PDF-1.7\n1 0 obj\n<<>>\nendobj\n%%EOF')
+    const uploadedResponse = await candidate.context.post('/api/candidates/me/resumes', {
+      headers: authorization(candidate.token),
+      multipart: {
+        file: { name: 'qa-storage-resume.pdf', mimeType: 'application/pdf', buffer: pdf },
+        isDefault: 'false',
+      },
+    })
+    expect(uploadedResponse.status()).toBe(201)
+    const resume = await json(uploadedResponse)
+    expect(resume.path).toMatch(/^[0-9a-f-]{36}\.pdf$/)
+
+    const ownedDownload = await candidate.context.get(`/api/candidates/resumes/${resume.id}/download`, { headers: authorization(candidate.token) })
+    expect(ownedDownload.status()).toBe(200)
+    expect(ownedDownload.headers()['cache-control']).toBe('private, no-store')
+    expect(await ownedDownload.body()).toEqual(pdf)
+    expect((await recruiter.context.get(`/api/candidates/resumes/${resume.id}/download`, { headers: authorization(recruiter.token) })).status()).toBe(403)
+
+    const renamed = await candidate.context.patch(`/api/candidates/me/resumes/${resume.id}`, {
+      headers: authorization(candidate.token), data: { fileName: 'QA Unicode CV.pdf' },
+    })
+    expect((await json(renamed)).fileName).toBe('QA Unicode CV.pdf')
+    expect((await candidate.context.delete(`/api/candidates/me/resumes/${resume.id}`, { headers: authorization(candidate.token) })).status()).toBe(204)
+    expect((await candidate.context.get(`/api/candidates/resumes/${resume.id}/download`, { headers: authorization(candidate.token) })).status()).toBe(404)
+
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')
+    const logoResponse = await recruiter.context.post('/api/companies/me/logo', {
+      headers: authorization(recruiter.token),
+      multipart: { file: { name: 'qa-logo.png', mimeType: 'image/png', buffer: png } },
+    })
+    expect(logoResponse.status()).toBe(200)
+    const company = await json(logoResponse)
+    expect(company.logoUrl).toMatch(/^\/assets\/logos\/[0-9a-f-]{36}\.png$/)
+    const logo = await recruiter.context.get(company.logoUrl)
+    expect(logo.status()).toBe(200)
+    expect(logo.headers()['x-content-type-options']).toBe('nosniff')
+
+    await Promise.all([candidate.context.dispose(), recruiter.context.dispose()])
+  })
+
   test('recruiter creates job, admin moderates, candidate applies, recruiter updates status', async () => {
     const recruiter = await login('recruiter')
     const admin = await login('admin')

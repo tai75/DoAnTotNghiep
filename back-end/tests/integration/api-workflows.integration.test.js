@@ -14,6 +14,8 @@ process.env.CORS_ORIGINS = 'http://localhost:5173'
 process.env.REFRESH_TOKEN_EXPIRES_IN = '7d'
 process.env.GEMINI_API_KEY = ''
 const uploadDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'job-connect-upload-test-'))
+const validPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')
+process.env.STORAGE_ROOT = uploadDirectory
 process.env.UPLOADS_DIRECTORY = uploadDirectory
 
 const database = vi.hoisted(() => {
@@ -39,6 +41,8 @@ globalThis.__JOB_CONNECT_TEST_SEND_EMAIL__ = mail.sendEmail
 
 const appModule = await import('../../src/app.js')
 const app = appModule.default || appModule
+const storageModule = await import('../../src/storage/localStorage.js')
+const storage = storageModule.default || storageModule
 
 function tokenFor(user) {
   return jwt.sign(
@@ -137,8 +141,7 @@ function resetDatabase() {
 beforeEach(resetDatabase)
 
 afterAll(() => {
-  for (const name of fs.readdirSync(uploadDirectory)) fs.unlinkSync(path.join(uploadDirectory, name))
-  fs.rmdirSync(uploadDirectory)
+  fs.rmSync(uploadDirectory, { recursive: true, force: true })
   delete globalThis.__JOB_CONNECT_TEST_PRISMA__
   delete globalThis.__JOB_CONNECT_TEST_SEND_EMAIL__
 })
@@ -821,7 +824,163 @@ describe('CV upload integration', () => {
     expect(invalid.status).toBe(400)
     expect(valid.status).toBe(201)
     expect(valid.body.data).toMatchObject({ fileName: 'resume.pdf', mimeType: 'application/pdf', isDefault: true })
-    expect(fs.readdirSync(uploadDirectory)).toHaveLength(1)
+    expect(fs.readdirSync(path.join(uploadDirectory, 'resumes'))).toHaveLength(1)
+  })
+
+  it('cleans up a stored file when the database transaction fails', async () => {
+    const candidateUser = database.state.users[0]
+    database.prisma.candidate.findUnique.mockResolvedValue({ id: 11, userId: candidateUser.id })
+    database.prisma.$transaction.mockRejectedValueOnce(new Error('database unavailable'))
+    const before = fs.readdirSync(path.join(uploadDirectory, 'resumes')).length
+
+    const response = await request(app).post('/api/candidates/me/resumes')
+      .set('Authorization', `Bearer ${tokenFor(candidateUser)}`)
+      .attach('file', Buffer.from('%PDF-1.7\n1 0 obj\n%%EOF'), { filename: 'same-name.pdf', contentType: 'application/pdf' })
+
+    expect(response.status).toBe(500)
+    expect(fs.readdirSync(path.join(uploadDirectory, 'resumes'))).toHaveLength(before)
+  })
+
+  it('refuses deletion while an application references the resume', async () => {
+    const candidateUser = database.state.users[0]
+    const item = { id: 82, candidateId: 11, path: storage.createKey('.pdf'), fileName: 'used.pdf' }
+    database.prisma.candidate.findUnique.mockResolvedValue({ id: 11, userId: candidateUser.id })
+    database.prisma.candidateResume.findFirst.mockResolvedValue(item)
+    database.prisma.candidateResume.updateMany.mockResolvedValue({ count: 1 })
+    database.prisma.application.count.mockResolvedValue(1)
+
+    const response = await request(app).delete('/api/candidates/me/resumes/82')
+      .set('Authorization', `Bearer ${tokenFor(candidateUser)}`)
+
+    expect(response.status).toBe(409)
+    expect(database.prisma.candidateResume.delete).not.toHaveBeenCalled()
+  })
+
+  it('does not report a false API failure when post-commit file cleanup fails', async () => {
+    const candidateUser = database.state.users[0]
+    const item = { id: 83, candidateId: 11, path: storage.createKey('.pdf'), fileName: 'old.pdf' }
+    database.prisma.candidate.findUnique.mockResolvedValue({ id: 11, userId: candidateUser.id })
+    database.prisma.candidateResume.findFirst.mockResolvedValue(item)
+    database.prisma.candidateResume.updateMany.mockResolvedValue({ count: 1 })
+    database.prisma.application.count.mockResolvedValue(0)
+    database.prisma.candidateResume.delete.mockResolvedValue(item)
+    const cleanup = vi.spyOn(storage, 'removeManaged').mockRejectedValueOnce(Object.assign(new Error('volume unavailable'), { code: 'EIO' }))
+
+    const response = await request(app).delete('/api/candidates/me/resumes/83')
+      .set('Authorization', `Bearer ${tokenFor(candidateUser)}`)
+
+    expect(response.status).toBe(204)
+    cleanup.mockRestore()
+  })
+
+  it('downloads an owned resume with hardened private headers', async () => {
+    const candidateUser = database.state.users[0]
+    const key = storage.createKey('.pdf')
+    await storage.put(storage.namespaces.resumes, key, Buffer.from('%PDF-1.7\n%%EOF'))
+    database.prisma.candidateResume.findUnique.mockResolvedValue({
+      id: 84, candidateId: 11, path: key, fileName: 'CV Nguyễn.pdf', mimeType: 'application/pdf', candidate: { userId: candidateUser.id }
+    })
+
+    const response = await request(app).get('/api/candidates/resumes/84/download')
+      .set('Authorization', `Bearer ${tokenFor(candidateUser)}`)
+
+    expect(response.status).toBe(200)
+    expect(response.headers['cache-control']).toBe('private, no-store')
+    expect(response.headers['x-content-type-options']).toBe('nosniff')
+    expect(response.headers['content-disposition']).toContain("filename*=UTF-8''")
+  })
+
+  it('keeps duplicate client filenames collision-free', async () => {
+    const candidateUser = database.state.users[0]
+    database.prisma.candidate.findUnique.mockResolvedValue({ id: 11, userId: candidateUser.id })
+    database.prisma.candidateResume.count.mockResolvedValue(0)
+    database.prisma.candidateResume.updateMany.mockResolvedValue({ count: 0 })
+    database.prisma.candidateResume.create.mockImplementation(async ({ data }) => ({ id: Math.random(), ...data }))
+    const upload = () => request(app).post('/api/candidates/me/resumes')
+      .set('Authorization', `Bearer ${tokenFor(candidateUser)}`)
+      .attach('file', Buffer.from('%PDF-1.7\n%%EOF'), { filename: 'resume.pdf', contentType: 'application/pdf' })
+
+    const [first, second] = await Promise.all([upload(), upload()])
+    expect(first.status).toBe(201)
+    expect(second.status).toBe(201)
+    expect(first.body.data.path).not.toBe(second.body.data.path)
+  })
+
+  it('allows only one concurrent delete to claim the DB row', async () => {
+    const candidateUser = database.state.users[0]
+    const item = { id: 85, candidateId: 11, path: storage.createKey('.pdf'), fileName: 'race.pdf' }
+    database.prisma.candidate.findUnique.mockResolvedValue({ id: 11, userId: candidateUser.id })
+    database.prisma.candidateResume.findFirst.mockResolvedValue(item)
+    database.prisma.application.count.mockResolvedValue(0)
+    let claimed = false
+    database.prisma.candidateResume.updateMany.mockImplementation(async () => {
+      if (claimed) return { count: 0 }
+      claimed = true
+      return { count: 1 }
+    })
+    database.prisma.candidateResume.delete.mockResolvedValue(item)
+    const remove = () => request(app).delete('/api/candidates/me/resumes/85')
+      .set('Authorization', `Bearer ${tokenFor(candidateUser)}`)
+
+    const responses = await Promise.all([remove(), remove()])
+    expect(responses.map(({ status }) => status).sort()).toEqual([204, 409])
+  })
+
+  it('promotes a replacement when an unreferenced default resume is deleted', async () => {
+    const candidateUser = database.state.users[0]
+    const item = { id: 86, candidateId: 11, path: storage.createKey('.pdf'), fileName: 'default.pdf', isDefault: true }
+    database.prisma.candidate.findUnique.mockResolvedValue({ id: 11, userId: candidateUser.id })
+    database.prisma.candidateResume.findFirst.mockResolvedValueOnce(item).mockResolvedValueOnce({ id: 87 })
+    database.prisma.candidateResume.updateMany.mockResolvedValue({ count: 1 })
+    database.prisma.application.count.mockResolvedValue(0)
+    database.prisma.candidateResume.delete.mockResolvedValue(item)
+    database.prisma.candidateResume.update.mockResolvedValue({ id: 87, isDefault: true })
+
+    const response = await request(app).delete('/api/candidates/me/resumes/86')
+      .set('Authorization', `Bearer ${tokenFor(candidateUser)}`)
+
+    expect(response.status).toBe(204)
+    expect(database.prisma.candidateResume.update).toHaveBeenCalledWith({ where: { id: 87 }, data: { isDefault: true } })
+  })
+})
+
+describe('company logo storage integration', () => {
+  it('publishes a replacement before updating the DB and cleans an unreferenced managed logo', async () => {
+    const recruiterUser = database.state.users[1]
+    const oldKey = storage.createKey('.png')
+    await storage.put(storage.namespaces.logos, oldKey, validPng)
+    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 12, userId: recruiterUser.id, companyId: 30 })
+    database.prisma.company.findUnique.mockResolvedValue({ logoUrl: `/assets/logos/${oldKey}` })
+    database.prisma.company.update.mockImplementation(async ({ data }) => ({ id: 30, name: 'QA Company', ...data }))
+    database.prisma.company.count.mockResolvedValue(0)
+
+    const response = await request(app).post('/api/companies/me/logo')
+      .set('Authorization', `Bearer ${tokenFor(recruiterUser)}`)
+      .attach('file', validPng, { filename: 'logo.png', contentType: 'image/png' })
+
+    expect(response.status).toBe(200)
+    expect(response.body.data.logoUrl).toMatch(/^\/assets\/logos\/[0-9a-f-]{36}\.png$/)
+    expect(await storage.locate(storage.namespaces.logos, oldKey)).toBeNull()
+    expect(await storage.locate(storage.namespaces.logos, response.body.data.logoUrl)).toMatchObject({ managed: true })
+    const publicLogo = await request(app).get(response.body.data.logoUrl)
+    expect(publicLogo.status).toBe(200)
+    expect(publicLogo.headers['content-type']).toContain('image/png')
+    expect(publicLogo.headers['x-content-type-options']).toBe('nosniff')
+  })
+
+  it('removes the newly stored logo when the DB update fails', async () => {
+    const recruiterUser = database.state.users[1]
+    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 12, userId: recruiterUser.id, companyId: 30 })
+    database.prisma.company.findUnique.mockResolvedValue({ logoUrl: null })
+    database.prisma.company.update.mockRejectedValue(new Error('database unavailable'))
+    const before = fs.readdirSync(path.join(uploadDirectory, 'logos')).length
+
+    const response = await request(app).post('/api/companies/me/logo')
+      .set('Authorization', `Bearer ${tokenFor(recruiterUser)}`)
+      .attach('file', validPng, { filename: 'logo.png', contentType: 'image/png' })
+
+    expect(response.status).toBe(500)
+    expect(fs.readdirSync(path.join(uploadDirectory, 'logos'))).toHaveLength(before)
   })
 })
 

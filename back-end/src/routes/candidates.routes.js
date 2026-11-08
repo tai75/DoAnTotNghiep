@@ -4,7 +4,6 @@ const path = require('path');
 const crypto = require('crypto');
 const multer = require('multer');
 const prisma = require('../config/prisma');
-const config = require('../config/env');
 const ApiError = require('../utils/apiError');
 const asyncHandler = require('../utils/asyncHandler');
 const validate = require('../middleware/validate');
@@ -13,6 +12,8 @@ const mammoth = require('mammoth');
 const pdfParse = require('pdf-parse');
 const { extractResumeProfile, resumeImportSchema, analyzeResumeForJob } = require('../services/llm.service');
 const { calculateMatchScore } = require('../services/matching.service');
+const storage = require('../storage/localStorage');
+const { setPrivateFileHeaders } = require('../storage/httpHeaders');
 
 const httpUrl = z.string().url().max(500).refine((value) => /^https?:\/\//i.test(value), 'Chỉ chấp nhận liên kết http hoặc https');
 
@@ -198,21 +199,12 @@ router.delete('/me/alerts/:id', authenticate, authorize('CANDIDATE'), validate(a
   res.json({ success: true, data: { id: Number(req.params.id) } });
 }));
 
-const uploadsDirectory = config.uploadsDirectory;
 const allowedResumeTypes = new Map([
   ['application/pdf', '.pdf'],
   ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.docx']
 ]);
 const resumeUpload = multer({
-  storage: multer.diskStorage({
-    destination: (req, file, callback) => {
-      fs.mkdirSync(uploadsDirectory, { recursive: true });
-      callback(null, uploadsDirectory);
-    },
-    filename: (req, file, callback) => {
-      callback(null, `${crypto.randomBytes(16).toString('hex')}${path.extname(file.originalname).toLowerCase()}`);
-    }
-  }),
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, callback) => {
     const extension = path.extname(file.originalname).toLowerCase();
@@ -224,9 +216,8 @@ const resumeUpload = multer({
 });
 const MAX_RESUME_TEXT_LENGTH = 30000;
 async function extractResumeText(resume) {
-  const filePath = path.join(uploadsDirectory, resume.path);
-  if (!fs.existsSync(filePath)) throw new ApiError(404, 'File CV không còn tồn tại');
-  const buffer = fs.readFileSync(filePath);
+  const buffer = await storage.read(storage.namespaces.resumes, resume.path);
+  if (!buffer) throw new ApiError(404, 'File CV không còn tồn tại');
   const result = resume.mimeType === 'application/pdf'
     ? await pdfParse(buffer)
     : await mammoth.extractRawText({ buffer });
@@ -242,8 +233,8 @@ function handleResumeUpload(req, res, next) {
     return next(new ApiError(400, 'File CV không hợp lệ'));
   });
 }
-function hasValidSignature(filePath, extension) {
-  const buffer = fs.readFileSync(filePath);
+function hasValidSignature(fileOrBuffer, extension) {
+  const buffer = Buffer.isBuffer(fileOrBuffer) ? fileOrBuffer : fs.readFileSync(fileOrBuffer);
   if (extension === '.pdf') {
     if (buffer.length < 8 || buffer.subarray(0, 5).toString('latin1') !== '%PDF-') return false;
     return buffer.subarray(Math.max(0, buffer.length - 2048)).includes(Buffer.from('%%EOF'));
@@ -400,11 +391,10 @@ router.get('/resumes/:id/download', authenticate, validate(resourceIdSchema), as
   }
   if (!canDownload) throw new ApiError(403, 'Bạn không có quyền tải CV này');
 
-  const filePath = path.join(uploadsDirectory, resume.path);
-  if (!fs.existsSync(filePath)) throw new ApiError(404, 'File CV không còn tồn tại');
-  res.setHeader('Content-Type', resume.mimeType);
-  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(resume.fileName)}"`);
-  res.sendFile(filePath);
+  const entry = await storage.locate(storage.namespaces.resumes, resume.path);
+  if (!entry) throw new ApiError(404, 'File CV không còn tồn tại');
+  setPrivateFileHeaders(res, resume.mimeType, resume.fileName);
+  res.sendFile(entry.path);
 }));
 
 router.get('/', authenticate, authorize('RECRUITER'), validate(candidateSearchSchema), asyncHandler(async (req, res) => {
@@ -684,6 +674,7 @@ router.post('/me/resumes/:id/import/confirm', authenticate, authorize('CANDIDATE
 }));
 
 router.post('/me/resumes', authenticate, authorize('CANDIDATE'), handleResumeUpload, asyncHandler(async (req, res) => {
+  let storageKey;
   try {
     if (!req.file) throw new ApiError(400, 'Vui lòng chọn file CV');
     const extension = path.extname(req.file.originalname).toLowerCase();
@@ -693,7 +684,7 @@ router.post('/me/resumes', authenticate, authorize('CANDIDATE'), handleResumeUpl
     if (req.file.mimetype !== expectedMimeType) {
       throw new ApiError(400, 'Mime type của CV không hợp lệ');
     }
-    if (!hasValidSignature(req.file.path, extension)) {
+    if (!hasValidSignature(req.file.buffer, extension)) {
       throw new ApiError(400, 'Nội dung file không đúng định dạng CV');
     }
 
@@ -701,6 +692,8 @@ router.post('/me/resumes', authenticate, authorize('CANDIDATE'), handleResumeUpl
     const safeFileName = path.basename(req.file.originalname).replace(/[\u0000-\u001f\u007f]/g, '').trim();
     if (!safeFileName || safeFileName.length > 255) throw new ApiError(400, 'Tên file CV không hợp lệ');
     const { isDefault } = resumeMetadataSchema.parse(req.body);
+    storageKey = storage.createKey(extension);
+    await storage.put(storage.namespaces.resumes, storageKey, req.file.buffer);
     const resume = await prisma.$transaction(async (transaction) => {
       const existingCount = await transaction.candidateResume.count({ where: { candidateId: candidate.id } });
       if (existingCount >= 10) throw new ApiError(400, 'Mỗi ứng viên chỉ được lưu tối đa 10 CV');
@@ -712,7 +705,7 @@ router.post('/me/resumes', authenticate, authorize('CANDIDATE'), handleResumeUpl
         data: {
           candidateId: candidate.id,
           fileName: safeFileName,
-          path: req.file.filename,
+          path: storageKey,
           mimeType: req.file.mimetype,
           size: req.file.size,
           isDefault: makeDefault
@@ -721,7 +714,7 @@ router.post('/me/resumes', authenticate, authorize('CANDIDATE'), handleResumeUpl
     });
     res.status(201).json({ success: true, data: resume });
   } catch (error) {
-    if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+    if (storageKey) await storage.removeManaged(storage.namespaces.resumes, storageKey).catch(() => {});
     throw error;
   }
 }));
@@ -738,9 +731,28 @@ router.patch('/me/resumes/:id', authenticate, authorize('CANDIDATE'), validate(z
 
 router.delete('/me/resumes/:id', authenticate, authorize('CANDIDATE'), validate(resourceIdSchema), asyncHandler(async (req, res) => {
   const { item } = await candidateResource(req, 'candidateResume', req.params.id);
-  await prisma.candidateResume.delete({ where: { id: item.id } });
-  const filePath = path.join(uploadsDirectory, item.path);
-  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  await prisma.$transaction(async (transaction) => {
+    // A harmless write acquires the row lock before checking application references.
+    const claimed = await transaction.candidateResume.updateMany({
+      where: { id: item.id, candidateId: item.candidateId },
+      data: { updatedAt: new Date() }
+    });
+    if (!claimed.count) throw new ApiError(409, 'CV vừa được thay đổi bởi yêu cầu khác');
+    const referenced = await transaction.application.count({ where: { OR: [{ resumeId: item.id }, { resumePathSnapshot: item.path }] } });
+    if (referenced) throw new ApiError(409, 'CV đang được sử dụng trong hồ sơ ứng tuyển và không thể xóa');
+    await transaction.candidateResume.delete({ where: { id: item.id } });
+    if (item.isDefault) {
+      const replacement = await transaction.candidateResume.findFirst({
+        where: { candidateId: item.candidateId },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true }
+      });
+      if (replacement) await transaction.candidateResume.update({ where: { id: replacement.id }, data: { isDefault: true } });
+    }
+  }, { isolationLevel: 'ReadCommitted' });
+  await storage.removeManaged(storage.namespaces.resumes, item.path).catch((error) => {
+    console.error({ name: error.name, code: error.code, component: 'resume-cleanup', resumeId: item.id });
+  });
   res.status(204).send();
 }));
 
