@@ -11,6 +11,7 @@ const {
   assertExpectedStatus,
   applyApplicationTransition
 } = require('../services/applicationState.service');
+const { cancelActiveInterviewsForTerminalApplication } = require('../services/interview.service');
 
 const applicationStatusSchema = z.enum(['APPLIED', 'REVIEWING', 'SHORTLISTED', 'INTERVIEWING', 'OFFERED', 'ACCEPTED', 'REJECTED', 'WITHDRAWN']);
 
@@ -262,6 +263,7 @@ router.post('/managed/bulk-reject', authenticate, authorize('RECRUITER'), valida
       });
       if (!transition.changed) continue;
       await transaction.applicationStatusHistory.create({ data: { applicationId: application.id, fromStatus: application.status, toStatus: 'REJECTED', note: req.body.message } });
+      await cancelActiveInterviewsForTerminalApplication(transaction, { ...application, status: 'REJECTED' }, req.body.message);
       await transaction.notification.create({ data: { userId: application.candidate.userId, type: 'APPLICATION_STATUS_CHANGED', title: 'Đơn ứng tuyển được cập nhật', content: req.body.message || `Đơn ứng tuyển vị trí ${application.job.title} đã bị từ chối.`, link: '/my-jobs?tab=applied' } });
       changedIds.push(application.id);
     }
@@ -315,6 +317,7 @@ router.patch('/:id/withdraw', authenticate, authorize('CANDIDATE'), validate(wit
     });
     if (!transition.changed) return transition.application;
     await transaction.applicationStatusHistory.create({ data: { applicationId: application.id, fromStatus: application.status, toStatus: 'WITHDRAWN' } });
+    await cancelActiveInterviewsForTerminalApplication(transaction, { ...application, status: 'WITHDRAWN' }, 'Ứng viên đã rút hồ sơ ứng tuyển.');
     const recruiterUsers = await transaction.recruiter.findMany({ where: { company: { jobs: { some: { id: application.jobId } } } }, select: { userId: true } });
     if (recruiterUsers.length) await transaction.notification.createMany({ data: recruiterUsers.map(({ userId }) => ({ userId, type: 'APPLICATION_STATUS_CHANGED', title: 'Ứng viên đã rút hồ sơ', content: 'Một ứng viên đã rút hồ sơ ứng tuyển.', link: `/recruiter?section=applications&applicationId=${application.id}` })) });
     return transition.application;
@@ -342,6 +345,7 @@ router.patch('/:id/status', authenticate, authorize('RECRUITER'), validate(statu
       return { result: transition.application, email: null, changed: false };
     }
     await transaction.applicationStatusHistory.create({ data: { applicationId: application.id, fromStatus: application.status, toStatus: req.body.status, note: req.body.note } });
+    await cancelActiveInterviewsForTerminalApplication(transaction, { ...application, status: req.body.status }, req.body.note);
     await transaction.notification.create({
       data: {
         userId: application.candidate.userId,

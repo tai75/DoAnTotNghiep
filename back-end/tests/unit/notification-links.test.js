@@ -21,4 +21,10 @@ describe('notification deep-link allowlist', () => {
     expect(resolveNotificationDestination({ type: 'NEW_APPLICATION', link: '/recruiter/applications/12' }, 'ADMIN')).toBe('/admin')
     expect(resolveNotificationDestination({ type: 'JOB_MODERATION', link: '/recruiter/jobs/9' }, 'CANDIDATE')).toBe('/jobs')
   })
+
+  it('maps interview notifications only to role-owned internal routes', () => {
+    expect(resolveNotificationDestination({ type: 'INTERVIEW_SCHEDULED', link: '/interviews/21' }, 'CANDIDATE')).toBe('/interviews/21')
+    expect(resolveNotificationDestination({ type: 'INTERVIEW_CONFIRMED', link: '/recruiter/interviews/21' }, 'RECRUITER')).toBe('/recruiter/interviews/21')
+    expect(resolveNotificationDestination({ type: 'INTERVIEW_CANCELLED', link: 'https://evil.test/redirect' }, 'CANDIDATE')).toBe('/interviews')
+  })
 })

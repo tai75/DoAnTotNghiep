@@ -17,6 +17,8 @@ const AlertsPage = lazy(() => import('../pages/AlertsPage'))
 const RecruiterTalentPage = lazy(() => import('../pages/RecruiterTalentPage'))
 const MessagesPage = lazy(() => import('../pages/MessagesPage'))
 const CandidateInvitationsPage = lazy(() => import('../pages/CandidateInvitationsPage'))
+const CandidateInterviewsPage = lazy(() => import('../pages/CandidateInterviewsPage'))
+const RecruiterInterviewsPage = lazy(() => import('../pages/RecruiterInterviewsPage'))
 
 function RoleGuard({ roles, children }) {
   const { session, isLoading } = useAuth()
@@ -51,6 +53,8 @@ export default function AppRoutes() {
     <Route path="/reset-password" element={<PasswordRecoveryPage />} />
     <Route path="/admin/*" element={<RoleGuard roles={['ADMIN']}><AdminDashboardPage /></RoleGuard>} />
     <Route path="/recruiter/talent" element={<RoleGuard roles={['RECRUITER']}><RecruiterTalentPage /></RoleGuard>} />
+    <Route path="/recruiter/interviews" element={<RoleGuard roles={['RECRUITER']}><RecruiterInterviewsPage /></RoleGuard>} />
+    <Route path="/recruiter/interviews/:id" element={<RoleGuard roles={['RECRUITER']}><RecruiterInterviewsPage /></RoleGuard>} />
     <Route path="/recruiter/*" element={<RoleGuard roles={['RECRUITER']}><RecruiterDashboardPage /></RoleGuard>} />
     <Route path="/jobs" element={<JobBoardPage />} />
     <Route path="/jobs/:id" element={<JobBoardPage />} />
@@ -61,6 +65,8 @@ export default function AppRoutes() {
     <Route path="/my-jobs" element={<RoleGuard roles={['CANDIDATE']}><MyJobsPage /></RoleGuard>} />
     <Route path="/invitations" element={<RoleGuard roles={['CANDIDATE']}><CandidateInvitationsPage /></RoleGuard>} />
     <Route path="/invitations/:id" element={<RoleGuard roles={['CANDIDATE']}><CandidateInvitationsPage /></RoleGuard>} />
+    <Route path="/interviews" element={<RoleGuard roles={['CANDIDATE']}><CandidateInterviewsPage /></RoleGuard>} />
+    <Route path="/interviews/:id" element={<RoleGuard roles={['CANDIDATE']}><CandidateInterviewsPage /></RoleGuard>} />
     <Route path="/messages" element={<RoleGuard roles={['CANDIDATE', 'RECRUITER']}><MessagesPage /></RoleGuard>} />
     <Route path="/applications" element={<Navigate to="/my-jobs?tab=applied" replace />} />
     <Route path="/saved-jobs" element={<Navigate to="/my-jobs?tab=saved" replace />} />

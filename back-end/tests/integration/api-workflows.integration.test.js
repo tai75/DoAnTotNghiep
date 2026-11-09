@@ -25,7 +25,7 @@ const database = vi.hoisted(() => {
     'job', 'jobScreeningQuestion', 'jobView', 'application', 'applicationAnswer',
     'applicationStatusHistory', 'applicationNote', 'matchScore', 'matchScoreV2',
     'embeddingCache', 'notification', 'companyFollow', 'auditLog', 'conversation', 'recommendation',
-    'message', 'candidateResume', 'jobAlert', 'skill', 'savedJob', 'talentInvitation'
+    'message', 'candidateResume', 'jobAlert', 'skill', 'savedJob', 'talentInvitation', 'interview'
   ]
   const prisma = Object.fromEntries(modelNames.map((name) => [
     name,
@@ -136,6 +136,7 @@ function resetDatabase() {
     return { count: matches.length }
   })
   prisma.$transaction.mockImplementation(async (work) => Array.isArray(work) ? Promise.all(work) : work(prisma))
+  prisma.interview.findMany.mockResolvedValue([])
 }
 
 beforeEach(resetDatabase)

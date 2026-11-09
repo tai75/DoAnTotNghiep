@@ -6,8 +6,8 @@ import NotificationCenter from './NotificationCenter'
 import './AppShell.css'
 
 const roleLinks = {
-  CANDIDATE: [{ to: '/jobs', label: 'Việc làm', icon: '⌕' }, { to: '/my-jobs', label: 'Việc của tôi', icon: '▣' }, { to: '/invitations', label: 'Lời mời', icon: '✉' }],
-  RECRUITER: [{ to: '/recruiter', label: 'Việc làm', icon: '▤' }, { to: '/recruiter/talent', label: 'Tìm ứng viên', icon: '⌕' }, { to: '/recruiter', label: 'Việc của tôi', icon: '▣' }],
+  CANDIDATE: [{ to: '/jobs', label: 'Việc làm', icon: '⌕' }, { to: '/my-jobs', label: 'Việc của tôi', icon: '▣' }, { to: '/interviews', label: 'Phỏng vấn', icon: '◷' }, { to: '/invitations', label: 'Lời mời', icon: '✉' }],
+  RECRUITER: [{ to: '/recruiter', label: 'Việc làm', icon: '▤' }, { to: '/recruiter/interviews', label: 'Phỏng vấn', icon: '◷' }, { to: '/recruiter/talent', label: 'Tìm ứng viên', icon: '⌕' }],
   ADMIN: [{ to: '/admin', label: 'Việc làm', icon: '▤' }, { to: '/admin', label: 'Việc của tôi', icon: '▣' }]
 }
 

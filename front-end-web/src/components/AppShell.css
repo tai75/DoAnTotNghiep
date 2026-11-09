@@ -76,7 +76,7 @@
 .app-drawer-account strong, .app-drawer-account small { display: block; }
 .app-drawer-account small { color: var(--color-muted); margin-top: 2px; }
 .app-drawer-account > button { background: transparent; border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-danger); min-height: 44px; }
-@media (max-width: 760px) {
+@media (max-width: 900px) {
   .app-header-inner { gap: 12px; padding: 0 16px; }
   .app-brand-name, .app-nav, .app-account-button span:nth-child(2), .app-account-button span:last-child { display: none; }
   .app-search { order: 2; }

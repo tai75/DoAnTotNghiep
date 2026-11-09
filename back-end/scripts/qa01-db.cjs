@@ -41,14 +41,14 @@ async function assertQaTarget(prisma) {
 async function assertQaDatabase(prisma) {
   const identity = await assertQaTarget(prisma);
   const migrations = migrationInventory();
-  if (migrations.length !== 17) throw new Error(`QA-01 safety stop: expected 17 migration files, found ${migrations.length}.`);
+  if (migrations.length !== 18) throw new Error(`QA-01 safety stop: expected 18 migration files, found ${migrations.length}.`);
   const history = await prisma.$queryRawUnsafe('SELECT migration_name migrationName, checksum, finished_at finishedAt, rolled_back_at rolledBackAt FROM _prisma_migrations ORDER BY started_at');
   const byName = new Map(history.map((row) => [row.migrationName, row]));
   const invalid = migrations.filter((migration) => {
     const row = byName.get(migration.name);
     return !row || row.checksum !== migration.checksum || !row.finishedAt || row.rolledBackAt;
   });
-  if (history.length !== 17 || invalid.length) throw new Error(`QA-01 safety stop: migration history is not canonical (${history.length}/17, invalid=${invalid.map((item) => item.name).join(',') || 'none'}).`);
+  if (history.length !== 18 || invalid.length) throw new Error(`QA-01 safety stop: migration history is not canonical (${history.length}/18, invalid=${invalid.map((item) => item.name).join(',') || 'none'}).`);
   return identity;
 }
 

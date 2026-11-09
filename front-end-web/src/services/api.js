@@ -139,6 +139,25 @@ export const applicationsApi = {
   })
 }
 
+const interviewQuery = (params = {}) => new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== '')))
+
+export const candidateInterviewsApi = {
+  list: (params = {}) => apiRequest(`/interviews/candidate?${interviewQuery(params)}`),
+  get: (id) => apiRequest(`/interviews/candidate/${id}`),
+  confirm: (id, expectedVersion, note) => apiRequest(`/interviews/candidate/${id}/confirm`, { method: 'POST', body: JSON.stringify({ expectedVersion, note: note || undefined }) }),
+  decline: (id, expectedVersion, note) => apiRequest(`/interviews/candidate/${id}/decline`, { method: 'POST', body: JSON.stringify({ expectedVersion, note: note || undefined }) }),
+  requestReschedule: (id, payload) => apiRequest(`/interviews/candidate/${id}/reschedule`, { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export const recruiterInterviewsApi = {
+  list: (params = {}) => apiRequest(`/interviews/recruiter?${interviewQuery(params)}`),
+  get: (id) => apiRequest(`/interviews/recruiter/${id}`),
+  create: (payload) => apiRequest('/interviews/recruiter', { method: 'POST', body: JSON.stringify(payload) }),
+  update: (id, payload) => apiRequest(`/interviews/recruiter/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  cancel: (id, expectedVersion, note) => apiRequest(`/interviews/recruiter/${id}/cancel`, { method: 'POST', body: JSON.stringify({ expectedVersion, note: note || undefined }) }),
+  complete: (id, expectedVersion, note) => apiRequest(`/interviews/recruiter/${id}/complete`, { method: 'POST', body: JSON.stringify({ expectedVersion, note: note || undefined }) })
+}
+
 export const notificationsApi = {
   list: (params = {}) => {
     const query = new URLSearchParams(Object.fromEntries(Object.entries({ limit: 20, ...params }).filter(([, value]) => value !== undefined)))

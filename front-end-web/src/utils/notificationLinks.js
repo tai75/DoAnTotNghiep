@@ -15,6 +15,10 @@ export function resolveNotificationDestination(notification, role) {
   const link = notification?.link
 
   if (role === 'CANDIDATE') {
+    if (String(type || '').startsWith('INTERVIEW_')) {
+      const interviewId = numericPathId(link, 'interviews')
+      return interviewId ? `/interviews/${interviewId}` : '/interviews'
+    }
     if (type === 'APPLICATION_STATUS_CHANGED') return '/my-jobs?tab=applied'
     if (type === 'TALENT_INVITATION') {
       const invitationId = numericPathId(link, 'invitations')
@@ -28,6 +32,10 @@ export function resolveNotificationDestination(notification, role) {
   }
 
   if (role === 'RECRUITER') {
+    if (String(type || '').startsWith('INTERVIEW_')) {
+      const interviewId = numericPathId(link, 'interviews')
+      return interviewId ? `/recruiter/interviews/${interviewId}` : '/recruiter/interviews'
+    }
     if (type === 'TALENT_INVITATION_RESPONSE') {
       const jobId = numericQueryId(link, 'jobId')
       return jobId ? `/recruiter/talent?jobId=${jobId}` : '/recruiter/talent'
@@ -52,4 +60,4 @@ export function resolveNotificationDestination(notification, role) {
   return '/jobs'
 }
 
-export const supportedNotificationTypes = ['APPLICATION_STATUS_CHANGED', 'NEW_APPLICATION', 'JOB_MODERATION', 'NEW_COMPANY_JOB', 'JOB_ALERT', 'TALENT_INVITATION', 'TALENT_INVITATION_RESPONSE', 'SYSTEM']
+export const supportedNotificationTypes = ['APPLICATION_STATUS_CHANGED', 'NEW_APPLICATION', 'JOB_MODERATION', 'NEW_COMPANY_JOB', 'JOB_ALERT', 'TALENT_INVITATION', 'TALENT_INVITATION_RESPONSE', 'INTERVIEW_SCHEDULED', 'INTERVIEW_CONFIRMED', 'INTERVIEW_RESCHEDULE_REQUESTED', 'INTERVIEW_RESCHEDULED', 'INTERVIEW_DECLINED', 'INTERVIEW_CANCELLED', 'SYSTEM']

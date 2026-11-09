@@ -85,6 +85,20 @@ enum ApplicationStatus {
   WITHDRAWN
 }
 
+enum InterviewMode {
+  ONLINE
+  ONSITE
+}
+
+enum InterviewStatus {
+  PENDING_RESPONSE
+  CONFIRMED
+  RESCHEDULE_REQUESTED
+  DECLINED
+  CANCELLED
+  COMPLETED
+}
+
 enum JobAlertFrequency {
   INSTANT
   DAILY
@@ -128,6 +142,7 @@ model User {
   savedTalentSearches   RecruiterSavedSearch[] @relation("SavedTalentSearchAuthor")
   talentInvitationsSent TalentInvitation[]     @relation("TalentInvitationRecruiter")
   companyReviews        CompanyReview[]
+  interviewActions      Interview[]            @relation("InterviewRecruiter")
 
   @@map("users")
 }
@@ -283,10 +298,42 @@ model Application {
   answers            ApplicationAnswer[]
   notes              ApplicationNote[]
   conversation       Conversation?
+  interviews        Interview[]
 
   @@unique([candidateId, jobId])
   @@index([jobId, status])
   @@map("applications")
+}
+
+model Interview {
+  id                    Int             @id @default(autoincrement())
+  applicationId         Int             @map("application_id")
+  recruiterUserId       Int             @map("recruiter_user_id")
+  round                 Int
+  scheduledStart        DateTime        @map("scheduled_start")
+  scheduledEnd          DateTime        @map("scheduled_end")
+  timezone              String          @db.VarChar(100)
+  mode                  InterviewMode
+  location              String?         @db.VarChar(500)
+  meetingUrl            String?         @map("meeting_url") @db.VarChar(1000)
+  candidateInstructions String?         @map("candidate_instructions") @db.Text
+  recruiterNote         String?         @map("recruiter_note") @db.Text
+  candidateResponseNote String?         @map("candidate_response_note") @db.Text
+  proposedStart         DateTime?        @map("proposed_start")
+  proposedEnd           DateTime?        @map("proposed_end")
+  status                InterviewStatus @default(PENDING_RESPONSE)
+  version               Int             @default(1)
+  requestKey            String          @unique @map("request_key") @db.Char(36)
+  createdAt             DateTime        @default(now()) @map("created_at")
+  updatedAt             DateTime        @updatedAt @map("updated_at")
+  application           Application     @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  recruiter             User            @relation("InterviewRecruiter", fields: [recruiterUserId], references: [id], onDelete: Restrict)
+
+  @@unique([applicationId, round])
+  @@index([applicationId, status])
+  @@index([recruiterUserId, scheduledStart])
+  @@index([status, scheduledStart])
+  @@map("interviews")
 }
 
 model Conversation {

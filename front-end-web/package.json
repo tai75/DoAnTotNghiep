@@ -9,6 +9,7 @@
     "lint": "oxlint",
     "test:e2e:mobile": "playwright test",
     "test:e2e:qa01": "playwright test --config=playwright.qa01.config.js",
+    "test:e2e:interviews": "playwright test --config=playwright.interviews.config.js",
     "test:e2e:notifications": "playwright test --config=playwright.notifications.config.js",
     "test:e2e:invitations": "playwright test --config=playwright.invitations.config.js",
     "preview": "vite preview"

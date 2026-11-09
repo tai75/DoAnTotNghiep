@@ -15,8 +15,8 @@ npm run dev
 ```
 
 Luồng `db:migrate` ở trên chỉ dành cho database local trắng hoặc database phát triển cô lập
-được phép tạo migration mới. Repository hiện có 17 migration đã được kiểm kê và chuẩn hóa LF,
-nhưng migration chain canonical LF chưa được rehearsal lại trên MySQL trắng.
+được phép tạo migration mới. Repository hiện có 18 migration đã được kiểm kê; migration 18 cho
+workflow phỏng vấn chỉ được rehearsal trên MySQL QA cô lập và chưa được apply lên development.
 
 Development database hiện có dữ liệu nhưng chưa có bảng `_prisma_migrations`. Không dùng
 `db:migrate`, `db:push`, `db:migrate:deploy` hoặc `migrate reset` trên database này để sửa
@@ -113,9 +113,9 @@ SameSite và Secure ở production.
 
 ## Staging
 
-Không dùng `db:push` hoặc `migrate dev` cho staging. Repository đã có baseline và đủ 17 migration
-canonical LF, nhưng chưa có bằng chứng blank-chain rehearsal sau bước chuẩn hóa LF; vì vậy staging
-chưa GO. Chỉ dùng `npm run db:migrate:deploy` sau khi chain canonical vượt qua rehearsal trên MySQL
+Không dùng `db:push` hoặc `migrate dev` cho staging. Repository đã có baseline và đủ 18 migration
+canonical LF; chain đã được rehearsal trên MySQL QA cô lập nhưng development vẫn đang pending migration 18,
+vì vậy staging chưa GO. Chỉ dùng `npm run db:migrate:deploy` sau khi chain canonical vượt qua rehearsal trên MySQL
 test cô lập và các safety gate được phê duyệt. File upload cần một persistent volume dùng chung
 qua `STORAGE_ROOT`; production sẽ từ chối khởi động nếu biến này thiếu, trỏ vào source tree hoặc
 không cho phép write/rename/delete. `UPLOADS_DIRECTORY` và `LOGOS_DIRECTORY` chỉ là đường dẫn
@@ -125,7 +125,7 @@ không cho phép write/rename/delete. `UPLOADS_DIRECTORY` và `LOGOS_DIRECTORY` 
 ## Database
 
 - Schema nguồn: `prisma/schema.prisma`
-- Migration: `prisma/migrations/` — 17 migration canonical LF đã được kiểm kê
+- Migration: `prisma/migrations/` — 18 migration canonical LF đã được kiểm kê
 - Tạo database MySQL ban đầu: `database/init.sql`
 - Hướng dẫn: `database/README.md`
 

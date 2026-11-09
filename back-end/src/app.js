@@ -21,6 +21,7 @@ const recruitersRoutes = require('./routes/recruiters.routes');
 const recommendationsRoutes = require('./routes/recommendations.routes');
 const conversationsRoutes = require('./routes/conversations.routes');
 const storageRoutes = require('./routes/storage.routes');
+const interviewsRoutes = require('./routes/interviews.routes');
 
 const app = express();
 
@@ -84,6 +85,7 @@ app.use('/api/recruiters', recruitersRoutes);
 app.use('/api/recommendations', recommendationsRoutes);
 app.use('/api/ai', recommendationsRoutes);
 app.use('/api/conversations', conversationsRoutes);
+app.use('/api/interviews', interviewsRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
