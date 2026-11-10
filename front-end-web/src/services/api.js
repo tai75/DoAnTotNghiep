@@ -231,6 +231,8 @@ export const adminApi = {
   companies: (params = {}) => apiRequest(`/admin/companies?${new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== '')))}`),
   company: (id) => apiRequest(`/admin/companies/${id}`),
   updateCompanyStatus: (id, status, reason, expectedUpdatedAt) => apiRequest(`/admin/companies/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, reason: reason || undefined, expectedUpdatedAt }) }),
+  verificationRequests: (params = {}) => apiRequest(`/admin/verification-requests?${new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== '')))}`),
+  decideVerification: (id, decision, reason, note) => apiRequest(`/admin/verification-requests/${id}`, { method: 'PATCH', body: JSON.stringify({ decision, reason: reason || undefined, note: note || undefined }) }),
   reports: (params = {}) => apiRequest(`/admin/reports?${new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== '')))}`),
   report: (id) => apiRequest(`/admin/reports/${id}`),
   updateReportStatus: (id, status, note, expectedUpdatedAt) => apiRequest(`/admin/reports/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, note: note || undefined, expectedUpdatedAt }) }),
@@ -246,6 +248,8 @@ export const reportsApi = {
 export const recruiterApi = {
   stats: () => apiRequest('/recruiters/stats'),
   company: () => apiRequest('/companies/me'),
+  verificationRequests: () => apiRequest('/companies/me/verification-requests'),
+  requestVerification: (requestKey) => apiRequest('/companies/me/verification-requests', { method: 'POST', body: JSON.stringify({ requestKey }) }),
   updateCompany: (payload) => apiRequest('/companies/me', { method: 'PATCH', body: JSON.stringify(payload) }),
   uploadLogo: (file) => {
     const body = new FormData()

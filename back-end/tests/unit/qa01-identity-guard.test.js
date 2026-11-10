@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import qaDatabase from '../../scripts/qa01-db.cjs'
 
 const originalUrl = process.env.QA01_DATABASE_URL
-const { qaUrl } = qaDatabase
+const { assertMigrationHistory, qaUrl } = qaDatabase
 
 afterEach(() => {
   if (originalUrl === undefined) delete process.env.QA01_DATABASE_URL
@@ -24,5 +24,15 @@ describe('QA-01 database identity guard', () => {
   ])('rejects unsafe target %s', (url) => {
     process.env.QA01_DATABASE_URL = url
     expect(() => qaUrl()).toThrow('QA-01 safety stop')
+  })
+
+  it('accepts only an exact successful migration history with matching checksums', () => {
+    const migrations = [{ name: '001', checksum: 'aaa' }, { name: '002', checksum: 'bbb' }]
+    const valid = migrations.map((migration) => ({ migrationName: migration.name, checksum: migration.checksum, finishedAt: new Date(), rolledBackAt: null }))
+    expect(() => assertMigrationHistory(migrations, valid)).not.toThrow()
+    expect(() => assertMigrationHistory(migrations, valid.slice(0, 1))).toThrow('not canonical')
+    expect(() => assertMigrationHistory(migrations, [...valid, { migrationName: '003', checksum: 'ccc', finishedAt: new Date(), rolledBackAt: null }])).toThrow('unexpected=003')
+    expect(() => assertMigrationHistory(migrations, [{ ...valid[0], rolledBackAt: new Date() }, valid[1]])).toThrow('invalid=001')
+    expect(() => assertMigrationHistory(migrations, [{ ...valid[0], checksum: 'changed' }, valid[1]])).toThrow('invalid=001')
   })
 })

@@ -40,6 +40,12 @@ const updateSchema = z.object({
   query: z.object({})
 });
 
+const verificationRequestSchema = z.object({
+  body: z.object({ requestKey: z.string().trim().min(8).max(80).optional() }),
+  params: z.object({}),
+  query: z.object({})
+});
+
 const router = require('express').Router();
 const listSchema = z.object({
   body: z.object({}),
@@ -76,6 +82,65 @@ router.get('/me', authenticate, authorize('RECRUITER'), requireActiveRecruiterCo
   const recruiter = await prisma.recruiter.findUnique({ where: { userId: req.user.id }, include: { company: true } });
   if (!recruiter) return res.status(403).json({ success: false, message: 'Tài khoản chưa được liên kết với nhà tuyển dụng' });
   res.json({ success: true, data: recruiter.company });
+}));
+
+router.get('/me/verification-requests', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, asyncHandler(async (req, res) => {
+  const recruiter = await prisma.recruiter.findUnique({ where: { userId: req.user.id }, select: { companyId: true } });
+  if (!recruiter) throw new ApiError(403, 'Tài khoản chưa được liên kết với doanh nghiệp');
+  const requests = await prisma.companyVerificationRequest.findMany({
+    where: { companyId: recruiter.companyId },
+    select: { id: true, status: true, rejectionReason: true, reviewNote: true, submittedAt: true, reviewedAt: true, companyVersion: true },
+    orderBy: { submittedAt: 'desc' },
+    take: 20
+  });
+  res.json({ success: true, data: requests });
+}));
+
+router.post('/me/verification-requests', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, validate(verificationRequestSchema), asyncHandler(async (req, res) => {
+  const recruiter = await prisma.recruiter.findUnique({ where: { userId: req.user.id }, select: { companyId: true } });
+  if (!recruiter) throw new ApiError(403, 'Tài khoản chưa được liên kết với doanh nghiệp');
+
+  const result = await prisma.$transaction(async (transaction) => {
+    await transaction.$queryRaw`SELECT id FROM companies WHERE id = ${recruiter.companyId} FOR UPDATE`;
+    const company = await transaction.company.findUnique({ where: { id: recruiter.companyId } });
+    if (!company || company.status !== 'ACTIVE') throw new ApiError(403, 'Doanh nghiệp đang bị đình chỉ hoạt động');
+    if (company.verificationStatus === 'VERIFIED') throw new ApiError(409, 'Doanh nghiệp đã được xác minh');
+    const pending = await transaction.companyVerificationRequest.findFirst({
+      where: { companyId: company.id, status: 'PENDING' },
+      orderBy: { submittedAt: 'desc' }
+    });
+    if (pending) return { request: pending, idempotent: true };
+    if (!company.name?.trim() || !company.address?.trim()) {
+      throw new ApiError(422, 'Vui lòng cập nhật tên và địa chỉ doanh nghiệp trước khi gửi xác minh');
+    }
+
+    const nextVersion = company.verificationVersion + 1;
+    const changed = await transaction.company.updateMany({
+      where: { id: company.id, verificationVersion: company.verificationVersion, verificationStatus: { in: ['UNVERIFIED', 'REJECTED'] } },
+      data: { verificationStatus: 'PENDING', verifiedAt: null, verificationSource: null, verificationVersion: nextVersion }
+    });
+    if (changed.count !== 1) throw new ApiError(409, 'Trạng thái xác minh vừa thay đổi, vui lòng tải lại');
+    const request = await transaction.companyVerificationRequest.create({
+      data: {
+        companyId: company.id,
+        submittedByUserId: req.user.id,
+        companyName: company.name,
+        website: company.website,
+        address: company.address,
+        industry: company.industry,
+        description: company.description,
+        requestKey: `${company.id}:${req.body.requestKey || nextVersion}`,
+        companyVersion: nextVersion
+      }
+    });
+    await transaction.auditLog.create({
+      data: { userId: req.user.id, action: 'COMPANY_VERIFICATION_SUBMITTED', entity: 'CompanyVerificationRequest', entityId: request.id, metadata: { companyId: company.id, companyVersion: nextVersion } }
+    });
+    const admins = await transaction.user.findMany({ where: { role: 'ADMIN', status: 'ACTIVE' }, select: { id: true } });
+    if (admins.length) await transaction.notification.createMany({ data: admins.map(({ id }) => ({ userId: id, type: 'COMPANY_VERIFICATION', title: 'Yêu cầu xác minh doanh nghiệp mới', content: `${company.name} đã gửi yêu cầu xác minh.`, link: '/admin?section=verification' })) });
+    return { request, idempotent: false };
+  });
+  res.status(result.idempotent ? 200 : 201).json({ success: true, data: result.request, meta: { idempotent: result.idempotent } });
 }));
 
 router.get('/', validate(listSchema), asyncHandler(async (req, res) => {
@@ -176,9 +241,10 @@ router.get('/:id', validate(idSchema), asyncHandler(async (req, res) => {
 }));
 
 router.patch('/me', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, validate(updateSchema), asyncHandler(async (req, res) => {
-  const recruiter = await prisma.recruiter.findUnique({ where: { userId: req.user.id }, include: { company: { select: { status: true } } } });
+  const recruiter = await prisma.recruiter.findUnique({ where: { userId: req.user.id }, include: { company: { select: { status: true, verificationStatus: true } } } });
   if (!recruiter) return res.status(403).json({ success: false, message: 'Tài khoản chưa được liên kết với nhà tuyển dụng' });
   if (recruiter.company.status !== 'ACTIVE') throw new ApiError(403, 'Doanh nghiệp đang bị đình chỉ, không thể cập nhật hồ sơ');
+  if (recruiter.company.verificationStatus === 'PENDING') throw new ApiError(409, 'Hồ sơ đang được xét duyệt; vui lòng chờ kết quả trước khi chỉnh sửa');
   const company = await prisma.company.update({ where: { id: recruiter.companyId }, data: req.body });
   res.json({ success: true, data: company });
 }));
@@ -193,9 +259,10 @@ router.post('/me/logo', authenticate, authorize('RECRUITER'), requireActiveRecru
   try {
     if (!req.file) throw new ApiError(400, 'Vui lòng chọn logo');
     if (!hasValidLogoSignature(req.file.buffer, req.file.mimetype)) throw new ApiError(400, 'Nội dung logo không đúng định dạng');
-    const recruiter = await prisma.recruiter.findUnique({ where: { userId: req.user.id }, include: { company: { select: { status: true } } } });
+    const recruiter = await prisma.recruiter.findUnique({ where: { userId: req.user.id }, include: { company: { select: { status: true, verificationStatus: true } } } });
     if (!recruiter) throw new ApiError(403, 'Tài khoản chưa được liên kết với nhà tuyển dụng');
     if (recruiter.company.status !== 'ACTIVE') throw new ApiError(403, 'Doanh nghiệp đang bị đình chỉ, không thể cập nhật biểu trưng');
+    if (recruiter.company.verificationStatus === 'PENDING') throw new ApiError(409, 'Hồ sơ đang được xét duyệt; vui lòng chờ kết quả trước khi thay đổi biểu trưng');
     const currentCompany = await prisma.company.findUnique({ where: { id: recruiter.companyId }, select: { logoUrl: true } });
     newKey = storage.createKey(req.file.mimetype === 'image/png' ? '.png' : '.jpg');
     await storage.put(storage.namespaces.logos, newKey, req.file.buffer);

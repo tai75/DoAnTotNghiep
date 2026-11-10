@@ -62,6 +62,24 @@ enum CompanyStatus {
   SUSPENDED
 }
 
+enum CompanyVerificationStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum CompanyVerificationSource {
+  LEGACY_BACKFILL
+  ADMIN_REVIEW
+}
+
+enum CompanyVerificationRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum ReportTargetType {
   JOB
   COMPANY
@@ -146,30 +164,32 @@ enum AlertDeliveryStatus {
 }
 
 model User {
-  id                    Int                    @id @default(autoincrement())
-  email                 String                 @unique @db.VarChar(191)
-  passwordHash          String                 @map("password_hash") @db.VarChar(255)
-  fullName              String                 @map("full_name") @db.VarChar(150)
-  phone                 String?                @db.VarChar(30)
-  role                  UserRole               @default(CANDIDATE)
-  status                UserStatus             @default(ACTIVE)
-  tokenVersion          Int                    @default(0) @map("token_version")
-  createdAt             DateTime               @default(now()) @map("created_at")
-  updatedAt             DateTime               @updatedAt @map("updated_at")
-  candidate             Candidate?
-  recruiter             Recruiter?
-  auditLogs             AuditLog[]
-  notifications         Notification[]
-  sentMessages          Message[]
-  passwordResetTokens   PasswordResetToken[]
-  refreshTokens         RefreshToken[]
-  applicationNotes      ApplicationNote[]
-  savedTalentSearches   RecruiterSavedSearch[] @relation("SavedTalentSearchAuthor")
-  talentInvitationsSent TalentInvitation[]     @relation("TalentInvitationRecruiter")
-  companyReviews        CompanyReview[]
-  interviewActions      Interview[]            @relation("InterviewRecruiter")
-  reportsSubmitted      Report[]               @relation("ReportSubmitter")
-  reportsResolved       Report[]               @relation("ReportResolver")
+  id                            Int                          @id @default(autoincrement())
+  email                         String                       @unique @db.VarChar(191)
+  passwordHash                  String                       @map("password_hash") @db.VarChar(255)
+  fullName                      String                       @map("full_name") @db.VarChar(150)
+  phone                         String?                      @db.VarChar(30)
+  role                          UserRole                     @default(CANDIDATE)
+  status                        UserStatus                   @default(ACTIVE)
+  tokenVersion                  Int                          @default(0) @map("token_version")
+  createdAt                     DateTime                     @default(now()) @map("created_at")
+  updatedAt                     DateTime                     @updatedAt @map("updated_at")
+  candidate                     Candidate?
+  recruiter                     Recruiter?
+  auditLogs                     AuditLog[]
+  notifications                 Notification[]
+  sentMessages                  Message[]
+  passwordResetTokens           PasswordResetToken[]
+  refreshTokens                 RefreshToken[]
+  applicationNotes              ApplicationNote[]
+  savedTalentSearches           RecruiterSavedSearch[]       @relation("SavedTalentSearchAuthor")
+  talentInvitationsSent         TalentInvitation[]           @relation("TalentInvitationRecruiter")
+  companyReviews                CompanyReview[]
+  interviewActions              Interview[]                  @relation("InterviewRecruiter")
+  reportsSubmitted              Report[]                     @relation("ReportSubmitter")
+  reportsResolved               Report[]                     @relation("ReportResolver")
+  verificationRequestsSubmitted CompanyVerificationRequest[] @relation("VerificationRequestSubmitter")
+  verificationRequestsReviewed  CompanyVerificationRequest[] @relation("VerificationRequestReviewer")
 
   @@map("users")
 }
@@ -187,7 +207,7 @@ model Candidate {
   desiredSalary         Decimal?              @map("desired_salary") @db.Decimal(15, 2)
   desiredLocation       String?               @map("desired_location") @db.VarChar(150)
   desiredEmploymentType EmploymentType?       @map("desired_employment_type")
-  isSearchable          Boolean               @default(true) @map("is_searchable")
+  isSearchable          Boolean               @default(false) @map("is_searchable")
   createdAt             DateTime              @default(now()) @map("created_at")
   updatedAt             DateTime              @updatedAt @map("updated_at")
   user                  User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -210,27 +230,60 @@ model Candidate {
 }
 
 model Company {
-  id            Int             @id @default(autoincrement())
-  name          String          @db.VarChar(180)
-  description   String?         @db.Text
-  website       String?         @db.VarChar(255)
-  logoUrl       String?         @map("logo_url") @db.VarChar(500)
-  address       String?         @db.VarChar(255)
-  employeeCount Int?            @map("employee_count")
-  industry      String?         @db.VarChar(150)
-  status        CompanyStatus   @default(ACTIVE)
-  statusReason  String?         @map("status_reason") @db.Text
-  statusChangedAt DateTime?     @map("status_changed_at")
-  createdAt     DateTime        @default(now()) @map("created_at")
-  updatedAt     DateTime        @updatedAt @map("updated_at")
-  recruiters    Recruiter[]
-  jobs          Job[]
-  followers     CompanyFollow[]
-  reviews       CompanyReview[]
-  reports       Report[]
+  id                   Int                          @id @default(autoincrement())
+  name                 String                       @db.VarChar(180)
+  description          String?                      @db.Text
+  website              String?                      @db.VarChar(255)
+  logoUrl              String?                      @map("logo_url") @db.VarChar(500)
+  address              String?                      @db.VarChar(255)
+  employeeCount        Int?                         @map("employee_count")
+  industry             String?                      @db.VarChar(150)
+  status               CompanyStatus                @default(ACTIVE)
+  statusReason         String?                      @map("status_reason") @db.Text
+  statusChangedAt      DateTime?                    @map("status_changed_at")
+  verificationStatus   CompanyVerificationStatus    @default(UNVERIFIED) @map("verification_status")
+  verifiedAt           DateTime?                    @map("verified_at")
+  verificationSource   CompanyVerificationSource?   @map("verification_source")
+  verificationVersion  Int                          @default(0) @map("verification_version")
+  createdAt            DateTime                     @default(now()) @map("created_at")
+  updatedAt            DateTime                     @updatedAt @map("updated_at")
+  recruiters           Recruiter[]
+  jobs                 Job[]
+  followers            CompanyFollow[]
+  reviews              CompanyReview[]
+  reports              Report[]
+  verificationRequests CompanyVerificationRequest[]
 
   @@index([status, createdAt])
   @@map("companies")
+}
+
+model CompanyVerificationRequest {
+  id                Int                              @id @default(autoincrement())
+  companyId         Int                              @map("company_id")
+  submittedByUserId Int                              @map("submitted_by_user_id")
+  reviewedByUserId  Int?                             @map("reviewed_by_user_id")
+  status            CompanyVerificationRequestStatus @default(PENDING)
+  companyName       String                           @map("company_name") @db.VarChar(180)
+  website           String?                          @db.VarChar(255)
+  address           String?                          @db.VarChar(255)
+  industry          String?                          @db.VarChar(150)
+  description       String?                          @db.Text
+  rejectionReason   String?                          @map("rejection_reason") @db.Text
+  reviewNote        String?                          @map("review_note") @db.Text
+  requestKey        String                           @unique @map("request_key") @db.VarChar(100)
+  companyVersion    Int                              @map("company_version")
+  submittedAt       DateTime                         @default(now()) @map("submitted_at")
+  reviewedAt        DateTime?                        @map("reviewed_at")
+  createdAt         DateTime                         @default(now()) @map("created_at")
+  updatedAt         DateTime                         @updatedAt @map("updated_at")
+  company           Company                          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  submittedBy       User                             @relation("VerificationRequestSubmitter", fields: [submittedByUserId], references: [id], onDelete: Restrict)
+  reviewedBy        User?                            @relation("VerificationRequestReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([status, submittedAt])
+  @@index([companyId, status])
+  @@map("company_verification_requests")
 }
 
 model Recruiter {
@@ -356,7 +409,7 @@ model Application {
   answers            ApplicationAnswer[]
   notes              ApplicationNote[]
   conversation       Conversation?
-  interviews        Interview[]
+  interviews         Interview[]
 
   @@unique([candidateId, jobId])
   @@index([jobId, status])
@@ -377,8 +430,8 @@ model Interview {
   candidateInstructions String?         @map("candidate_instructions") @db.Text
   recruiterNote         String?         @map("recruiter_note") @db.Text
   candidateResponseNote String?         @map("candidate_response_note") @db.Text
-  proposedStart         DateTime?        @map("proposed_start")
-  proposedEnd           DateTime?        @map("proposed_end")
+  proposedStart         DateTime?       @map("proposed_start")
+  proposedEnd           DateTime?       @map("proposed_end")
   status                InterviewStatus @default(PENDING_RESPONSE)
   version               Int             @default(1)
   requestKey            String          @unique @map("request_key") @db.Char(36)

@@ -182,7 +182,9 @@ export default function RecruiterDashboardPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [nextStats, nextCompany, nextJobs, nextSkills] = await Promise.all([recruiterApi.stats(), recruiterApi.company(), recruiterApi.jobs(), recruiterApi.skills()])
+      const nextCompany = await recruiterApi.company()
+      const [nextJobs, nextSkills] = await Promise.all([recruiterApi.jobs(), recruiterApi.skills()])
+      const nextStats = nextCompany.verificationStatus === 'VERIFIED' ? await recruiterApi.stats() : { jobsByStatus: {}, applicationsTotal: 0, applicationsByStatus: {}, applicationsByJob: [], timeline: [] }
       setStats(nextStats); setCompany(nextCompany); setJobs(nextJobs); setSkills(nextSkills); setError('')
     } catch (actionError) { setError(actionError.message) } finally { setLoading(false) }
   }, [])

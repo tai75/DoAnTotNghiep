@@ -3,7 +3,7 @@ const prisma = require('../config/prisma');
 const ApiError = require('../utils/apiError');
 const asyncHandler = require('../utils/asyncHandler');
 const validate = require('../middleware/validate');
-const { authenticate, authorize, requireActiveRecruiterCompany } = require('../middleware/auth');
+const { authenticate, authorize, requireActiveRecruiterCompany, requireVerifiedRecruiterCompany } = require('../middleware/auth');
 const {
   TERMINAL_APPLICATION_STATUSES, assertModeDetails, parseSchedule, notify,
   moveApplicationToInterviewing, claimInterview
@@ -59,7 +59,7 @@ async function candidateInterview(userId, id) {
   return interview;
 }
 
-router.post('/recruiter', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, validate(createSchema), asyncHandler(async (req, res) => {
+router.post('/recruiter', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, requireVerifiedRecruiterCompany, validate(createSchema), asyncHandler(async (req, res) => {
   assertModeDetails(req.body);
   const { start, end } = parseSchedule(req.body);
   const recruiter = await recruiterIdentity(req.user.id);
@@ -100,7 +100,7 @@ router.post('/recruiter', authenticate, authorize('RECRUITER'), requireActiveRec
   res.status(statusCode).json({ success: true, data: interview, ...(statusCode === 200 ? { meta: { idempotentReplay: true } } : {}) });
 }));
 
-router.get('/recruiter', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, validate(listSchema), asyncHandler(async (req, res) => {
+router.get('/recruiter', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, requireVerifiedRecruiterCompany, validate(listSchema), asyncHandler(async (req, res) => {
   const recruiter = await recruiterIdentity(req.user.id);
   const { status, from, to, page, limit, sort } = req.query;
   const where = { application: { job: { companyId: recruiter.companyId } }, ...(status ? { status } : {}), ...((from || to) ? { scheduledStart: { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lte: new Date(to) } : {}) } } : {}) };
@@ -108,9 +108,9 @@ router.get('/recruiter', authenticate, authorize('RECRUITER'), requireActiveRecr
   res.json({ success: true, data: { items, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } } });
 }));
 
-router.get('/recruiter/:id', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, validate(emptyQuery), asyncHandler(async (req, res) => res.json({ success: true, data: await recruiterInterview(req.user.id, req.params.id) })));
+router.get('/recruiter/:id', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, requireVerifiedRecruiterCompany, validate(emptyQuery), asyncHandler(async (req, res) => res.json({ success: true, data: await recruiterInterview(req.user.id, req.params.id) })));
 
-router.patch('/recruiter/:id', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, validate(updateSchema), asyncHandler(async (req, res) => {
+router.patch('/recruiter/:id', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, requireVerifiedRecruiterCompany, validate(updateSchema), asyncHandler(async (req, res) => {
   assertModeDetails(req.body); const { start, end } = parseSchedule(req.body);
   const interview = await recruiterInterview(req.user.id, req.params.id);
   const updated = await prisma.$transaction(async (transaction) => {
@@ -121,7 +121,7 @@ router.patch('/recruiter/:id', authenticate, authorize('RECRUITER'), requireActi
   res.json({ success: true, data: updated });
 }));
 
-router.post('/recruiter/:id/cancel', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, validate(actionSchema), asyncHandler(async (req, res) => {
+router.post('/recruiter/:id/cancel', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, requireVerifiedRecruiterCompany, validate(actionSchema), asyncHandler(async (req, res) => {
   const interview = await recruiterInterview(req.user.id, req.params.id);
   const updated = await prisma.$transaction(async (transaction) => {
     const result = await claimInterview(transaction, interview, { expectedVersion: req.body.expectedVersion, update: { status: 'CANCELLED', recruiterNote: req.body.note || interview.recruiterNote } }, ['PENDING_RESPONSE', 'CONFIRMED', 'RESCHEDULE_REQUESTED']);
@@ -131,7 +131,7 @@ router.post('/recruiter/:id/cancel', authenticate, authorize('RECRUITER'), requi
   res.json({ success: true, data: updated });
 }));
 
-router.post('/recruiter/:id/complete', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, validate(actionSchema), asyncHandler(async (req, res) => {
+router.post('/recruiter/:id/complete', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, requireVerifiedRecruiterCompany, validate(actionSchema), asyncHandler(async (req, res) => {
   const interview = await recruiterInterview(req.user.id, req.params.id);
   if (interview.scheduledEnd > new Date()) throw new ApiError(409, 'Chỉ có thể hoàn thành sau khi lịch phỏng vấn kết thúc.');
   const updated = await prisma.$transaction(async (transaction) => {

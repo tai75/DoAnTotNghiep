@@ -252,9 +252,9 @@ router.post('/register', authRateLimit, validate(registerSchema), asyncHandler(a
       data: { email, passwordHash, fullName, phone, role }
     });
     if (role === 'CANDIDATE') {
-      await transaction.candidate.create({ data: { userId: createdUser.id } });
+      await transaction.candidate.create({ data: { userId: createdUser.id, isSearchable: false } });
     } else {
-      const company = await transaction.company.create({ data: { name: companyName } });
+      const company = await transaction.company.create({ data: { name: companyName, verificationStatus: 'UNVERIFIED' } });
       await transaction.recruiter.create({
         data: { userId: createdUser.id, companyId: company.id }
       });

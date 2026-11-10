@@ -3,6 +3,14 @@ const prisma = require('../config/prisma');
 const config = require('../config/env');
 const ApiError = require('../utils/apiError');
 
+function recruiterCompanyAccess(company, requireVerified = false) {
+  if (!company || company.status !== 'ACTIVE') return { allowed: false, reason: 'SUSPENDED' };
+  if (requireVerified && company.verificationStatus !== 'VERIFIED') {
+    return { allowed: false, reason: 'UNVERIFIED', verificationStatus: company.verificationStatus };
+  }
+  return { allowed: true };
+}
+
 async function authenticate(req, res, next) {
   const authorization = req.headers.authorization;
   const token = authorization && authorization.startsWith('Bearer ')
@@ -49,10 +57,10 @@ async function requireActiveRecruiterCompany(req, res, next) {
       select: {
         id: true,
         companyId: true,
-        company: { select: { status: true } }
+        company: { select: { status: true, verificationStatus: true, verificationVersion: true } }
       }
     });
-    if (!recruiter || recruiter.company?.status !== 'ACTIVE') {
+    if (!recruiterCompanyAccess(recruiter?.company).allowed) {
       return next(new ApiError(403, 'Doanh nghiệp đang bị đình chỉ hoạt động'));
     }
     req.recruiter = recruiter;
@@ -62,4 +70,31 @@ async function requireActiveRecruiterCompany(req, res, next) {
   }
 }
 
-module.exports = { authenticate, authorize, requireActiveRecruiterCompany };
+async function requireVerifiedRecruiterCompany(req, res, next) {
+  if (!req.user || req.user.role !== 'RECRUITER') return next();
+  try {
+    let recruiter = req.recruiter;
+    if (!recruiter?.company?.verificationStatus) {
+      recruiter = await prisma.recruiter.findUnique({
+        where: { userId: req.user.id },
+        select: { id: true, companyId: true, company: { select: { status: true, verificationStatus: true, verificationVersion: true } } }
+      });
+    }
+    const access = recruiterCompanyAccess(recruiter?.company, true);
+    if (access.reason === 'SUSPENDED') {
+      return next(new ApiError(403, 'Doanh nghiệp đang bị đình chỉ hoạt động'));
+    }
+    if (!access.allowed) {
+      return next(new ApiError(403, 'Doanh nghiệp phải được xác minh trước khi thực hiện thao tác này', {
+        code: 'COMPANY_VERIFICATION_REQUIRED',
+        verificationStatus: recruiter.company.verificationStatus
+      }));
+    }
+    req.recruiter = recruiter;
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+}
+
+module.exports = { authenticate, authorize, requireActiveRecruiterCompany, requireVerifiedRecruiterCompany, recruiterCompanyAccess };

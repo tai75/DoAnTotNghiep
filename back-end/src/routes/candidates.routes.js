@@ -7,7 +7,7 @@ const prisma = require('../config/prisma');
 const ApiError = require('../utils/apiError');
 const asyncHandler = require('../utils/asyncHandler');
 const validate = require('../middleware/validate');
-const { authenticate, authorize, requireActiveRecruiterCompany } = require('../middleware/auth');
+const { authenticate, authorize, requireActiveRecruiterCompany, requireVerifiedRecruiterCompany } = require('../middleware/auth');
 const mammoth = require('mammoth');
 const pdfParse = require('pdf-parse');
 const { extractResumeProfile, resumeImportSchema, analyzeResumeForJob } = require('../services/llm.service');
@@ -377,7 +377,7 @@ router.get('/skills', asyncHandler(async (req, res) => {
   res.json({ success: true, data: skills });
 }));
 
-router.get('/resumes/:id/download', authenticate, requireActiveRecruiterCompany, validate(resourceIdSchema), asyncHandler(async (req, res) => {
+router.get('/resumes/:id/download', authenticate, requireActiveRecruiterCompany, requireVerifiedRecruiterCompany, validate(resourceIdSchema), asyncHandler(async (req, res) => {
   const resume = await prisma.candidateResume.findUnique({
     where: { id: req.params.id },
     include: { candidate: true }
@@ -405,7 +405,7 @@ router.get('/resumes/:id/download', authenticate, requireActiveRecruiterCompany,
   res.sendFile(entry.path);
 }));
 
-router.get('/', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, validate(candidateSearchSchema), asyncHandler(async (req, res) => {
+router.get('/', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, requireVerifiedRecruiterCompany, validate(candidateSearchSchema), asyncHandler(async (req, res) => {
   const { search, location, desiredPosition, page, limit } = req.query;
   const where = {
     isSearchable: true,

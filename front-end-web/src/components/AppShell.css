@@ -103,3 +103,18 @@
   .app-action-button { align-items: center; display: inline-flex; justify-content: center; min-height: 44px; min-width: 38px; }
   .app-content { min-height: calc(100vh - 116px); }
 }
+.company-verification-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem max(1rem, calc((100vw - 1200px) / 2));
+  color: #713f12;
+  background: #fef3c7;
+  border-bottom: 1px solid #f59e0b;
+}
+.company-verification-banner p { margin: 0.25rem 0 0; }
+.company-verification-banner small { display: block; color: #b91c1c; margin-top: 0.25rem; }
+.company-verification-banner button { flex: none; padding: 0.65rem 1rem; border: 0; border-radius: 0.5rem; color: white; background: #92400e; cursor: pointer; }
+.company-verification-banner button:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+@media (max-width: 640px) { .company-verification-banner { align-items: stretch; flex-direction: column; } .company-verification-banner button { width: 100%; } }

@@ -21,13 +21,40 @@ function qaUrl() {
 
 function migrationInventory() {
   const directory = path.resolve(__dirname, '../prisma/migrations');
-  return fs.readdirSync(directory, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && fs.existsSync(path.join(directory, entry.name, 'migration.sql')))
+  const directories = fs.readdirSync(directory, { withFileTypes: true }).filter((entry) => entry.isDirectory());
+  const incomplete = directories.filter((entry) => !fs.existsSync(path.join(directory, entry.name, 'migration.sql')));
+  if (incomplete.length) {
+    throw new Error(`QA-01 safety stop: migration directories without migration.sql: ${incomplete.map((entry) => entry.name).join(', ')}.`);
+  }
+  const migrations = directories
     .sort((left, right) => left.name.localeCompare(right.name))
     .map((entry) => ({
       name: entry.name,
       checksum: crypto.createHash('sha256').update(fs.readFileSync(path.join(directory, entry.name, 'migration.sql'))).digest('hex'),
     }));
+  if (!migrations.length) throw new Error('QA-01 safety stop: no local migrations found.');
+  return migrations;
+}
+
+function assertMigrationHistory(migrations, history) {
+  const localNames = new Set(migrations.map(({ name }) => name));
+  const historyByName = new Map();
+  for (const row of history) {
+    const rows = historyByName.get(row.migrationName) || [];
+    rows.push(row);
+    historyByName.set(row.migrationName, rows);
+  }
+  const invalid = migrations.filter((migration) => {
+    const rows = historyByName.get(migration.name) || [];
+    return rows.length !== 1
+      || rows[0].checksum !== migration.checksum
+      || !rows[0].finishedAt
+      || Boolean(rows[0].rolledBackAt);
+  }).map(({ name }) => name);
+  const unexpected = [...historyByName.keys()].filter((name) => !localNames.has(name));
+  if (history.length !== migrations.length || invalid.length || unexpected.length) {
+    throw new Error(`QA-01 safety stop: migration history is not canonical (local=${migrations.length}, history=${history.length}, invalid=${invalid.join(',') || 'none'}, unexpected=${unexpected.join(',') || 'none'}).`);
+  }
 }
 
 async function assertQaTarget(prisma) {
@@ -41,18 +68,13 @@ async function assertQaTarget(prisma) {
 async function assertQaDatabase(prisma) {
   const identity = await assertQaTarget(prisma);
   const migrations = migrationInventory();
-  if (migrations.length !== 19) throw new Error(`QA-01 safety stop: expected 19 migration files, found ${migrations.length}.`);
   const history = await prisma.$queryRawUnsafe('SELECT migration_name migrationName, checksum, finished_at finishedAt, rolled_back_at rolledBackAt FROM _prisma_migrations ORDER BY started_at');
-  const byName = new Map(history.map((row) => [row.migrationName, row]));
-  const invalid = migrations.filter((migration) => {
-    const row = byName.get(migration.name);
-    return !row || row.checksum !== migration.checksum || !row.finishedAt || row.rolledBackAt;
-  });
-  if (history.length !== 19 || invalid.length) throw new Error(`QA-01 safety stop: migration history is not canonical (${history.length}/19, invalid=${invalid.map((item) => item.name).join(',') || 'none'}).`);
-  return identity;
+  assertMigrationHistory(migrations, history);
+  return { ...identity, migrationCount: migrations.length };
 }
 
 async function resetBusinessData(prisma) {
+  await assertQaDatabase(prisma);
   const tables = await prisma.$queryRawUnsafe("SELECT table_name tableName FROM information_schema.tables WHERE table_schema=DATABASE() AND table_type='BASE TABLE' AND table_name <> '_prisma_migrations' ORDER BY table_name");
   await prisma.$transaction(async (transaction) => {
     await transaction.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS=0');
@@ -69,6 +91,7 @@ async function resetBusinessData(prisma) {
 }
 
 async function seed(prisma) {
+  await assertQaDatabase(prisma);
   const password = process.env.QA01_PASSWORD;
   if (!password || password.length < 12) throw new Error('QA01_PASSWORD with at least 12 characters is required.');
   const passwordHash = await bcrypt.hash(password, 10);
@@ -77,8 +100,9 @@ async function seed(prisma) {
     prisma.user.create({ data: { email: 'recruiter@jobconnect.local', passwordHash, fullName: 'QA Recruiter', role: 'RECRUITER' } }),
     prisma.user.create({ data: { email: 'admin@jobconnect.local', passwordHash, fullName: 'QA Admin', role: 'ADMIN' } }),
   ]);
-  const company = await prisma.company.create({ data: { name: 'QA-01 Synthetic Company', address: 'QA Loopback' } });
+  const company = await prisma.company.create({ data: { name: 'QA-01 Synthetic Company', address: 'QA Loopback', verificationStatus: 'VERIFIED', verificationSource: 'ADMIN_REVIEW', verifiedAt: new Date(), verificationVersion: 2 } });
   await prisma.recruiter.create({ data: { userId: recruiterUser.id, companyId: company.id, jobTitle: 'QA Recruiter' } });
+  await prisma.companyVerificationRequest.create({ data: { companyId: company.id, submittedByUserId: recruiterUser.id, reviewedByUserId: adminUser.id, status: 'APPROVED', companyName: company.name, address: company.address, requestKey: `qa01-seed-${company.id}`, companyVersion: 1, reviewedAt: new Date(), reviewNote: 'Synthetic QA fixture approval' } });
   const candidate = await prisma.candidate.create({
     data: {
       userId: candidateUser.id,
@@ -152,4 +176,4 @@ async function main() {
 
 if (require.main === module) main().catch((error) => { console.error(error.message); process.exitCode = 1; });
 
-module.exports = { assertQaDatabase, assertQaTarget, qaUrl, resetBusinessData, seed, tableCounts };
+module.exports = { assertMigrationHistory, assertQaDatabase, assertQaTarget, migrationInventory, qaUrl, resetBusinessData, seed, tableCounts };

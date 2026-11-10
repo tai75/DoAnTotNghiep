@@ -130,8 +130,82 @@ const auditSchema = z.object({
   })
 });
 
+const verificationListSchema = z.object({
+  body: z.object({}),
+  params: z.object({}),
+  query: z.object({
+    status: z.enum(['PENDING', 'APPROVED', 'REJECTED']).default('PENDING'),
+    page: z.coerce.number().int().positive().default(1),
+    limit: z.coerce.number().int().min(1).max(50).default(20)
+  })
+});
+
+const verificationDecisionSchema = z.object({
+  body: z.object({
+    decision: z.enum(['APPROVED', 'REJECTED']),
+    reason: z.string().trim().max(2000).optional(),
+    note: z.string().trim().max(2000).optional()
+  }).refine(({ decision, reason }) => decision !== 'REJECTED' || Boolean(reason), { path: ['reason'], message: 'Vui lòng nhập lý do từ chối' }),
+  params: z.object({ id: z.coerce.number().int().positive() }),
+  query: z.object({})
+});
+
 const router = require('express').Router();
 router.use(authenticate, authorize('ADMIN'));
+
+router.get('/verification-requests', validate(verificationListSchema), asyncHandler(async (req, res) => {
+  const { status, page, limit } = req.query;
+  const [items, total] = await prisma.$transaction([
+    prisma.companyVerificationRequest.findMany({
+      where: { status },
+      select: {
+        id: true, status: true, companyName: true, website: true, address: true, industry: true, description: true,
+        rejectionReason: true, reviewNote: true, submittedAt: true, reviewedAt: true, companyVersion: true,
+        company: { select: { id: true, name: true, status: true, verificationStatus: true, verificationVersion: true } },
+        submittedBy: { select: { id: true, fullName: true, email: true } },
+        reviewedBy: { select: { id: true, fullName: true } }
+      },
+      orderBy: { submittedAt: 'asc' },
+      skip: (page - 1) * limit,
+      take: limit
+    }),
+    prisma.companyVerificationRequest.count({ where: { status } })
+  ]);
+  res.json({ success: true, data: { items, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } } });
+}));
+
+router.patch('/verification-requests/:id', validate(verificationDecisionSchema), asyncHandler(async (req, res) => {
+  const { decision, reason, note } = req.body;
+  const current = await prisma.companyVerificationRequest.findUnique({ where: { id: req.params.id } });
+  if (!current) throw new ApiError(404, 'Không tìm thấy yêu cầu xác minh');
+  if (current.status !== 'PENDING') {
+    if (current.status === decision) return res.json({ success: true, data: current, meta: { idempotent: true } });
+    throw new ApiError(409, 'Yêu cầu xác minh đã được xử lý');
+  }
+
+  const result = await prisma.$transaction(async (transaction) => {
+    const claimed = await transaction.companyVerificationRequest.updateMany({
+      where: { id: current.id, status: 'PENDING', companyVersion: current.companyVersion },
+      data: { status: decision, reviewedByUserId: req.user.id, reviewedAt: new Date(), rejectionReason: decision === 'REJECTED' ? reason : null, reviewNote: note || null }
+    });
+    if (claimed.count !== 1) throw new ApiError(409, 'Yêu cầu vừa được quản trị viên khác xử lý');
+    const companyChanged = await transaction.company.updateMany({
+      where: { id: current.companyId, status: 'ACTIVE', verificationStatus: 'PENDING', verificationVersion: current.companyVersion },
+      data: decision === 'APPROVED'
+        ? { verificationStatus: 'VERIFIED', verifiedAt: new Date(), verificationSource: 'ADMIN_REVIEW', verificationVersion: { increment: 1 } }
+        : { verificationStatus: 'REJECTED', verifiedAt: null, verificationSource: null, verificationVersion: { increment: 1 } }
+    });
+    if (companyChanged.count !== 1) throw new ApiError(409, 'Doanh nghiệp đã thay đổi trạng thái; quyết định chưa được áp dụng');
+    const request = await transaction.companyVerificationRequest.findUnique({ where: { id: current.id } });
+    await transaction.auditLog.create({
+      data: { userId: req.user.id, action: decision === 'APPROVED' ? 'COMPANY_VERIFICATION_APPROVED' : 'COMPANY_VERIFICATION_REJECTED', entity: 'CompanyVerificationRequest', entityId: current.id, metadata: { companyId: current.companyId, reason: decision === 'REJECTED' ? reason : null, note: note || null, companyVersion: current.companyVersion } }
+    });
+    const recruiters = await transaction.recruiter.findMany({ where: { companyId: current.companyId }, select: { userId: true } });
+    if (recruiters.length) await transaction.notification.createMany({ data: recruiters.map(({ userId }) => ({ userId, type: 'COMPANY_VERIFICATION', title: decision === 'APPROVED' ? 'Doanh nghiệp đã được xác minh' : 'Yêu cầu xác minh bị từ chối', content: decision === 'APPROVED' ? 'Doanh nghiệp của bạn đã được xác minh.' : `Yêu cầu xác minh bị từ chối. Lý do: ${reason}`, link: '/recruiter?section=company' })) });
+    return request;
+  });
+  res.json({ success: true, data: result, meta: { idempotent: false } });
+}));
 
 router.get('/stats', validate(statsSchema), asyncHandler(async (req, res) => {
   const { from, to, groupBy } = req.query;
@@ -312,12 +386,13 @@ router.get('/jobs', validate(jobListSchema), asyncHandler(async (req, res) => {
 
 router.patch('/jobs/:id/moderation', validate(moderationSchema), asyncHandler(async (req, res) => {
   const { status, note, expectedUpdatedAt } = req.body;
-  const job = await prisma.job.findUnique({ where: { id: req.params.id }, include: { company: { select: { id: true, name: true, status: true } } } });
+  const job = await prisma.job.findUnique({ where: { id: req.params.id }, include: { company: { select: { id: true, name: true, status: true, verificationStatus: true } } } });
   if (!job) throw new ApiError(404, 'Không tìm thấy tin tuyển dụng');
   const normalizedNote = note || null;
   if (job.status === status && (job.moderationNote || null) === normalizedNote) return res.json({ success: true, data: job, meta: { idempotent: true } });
   if (job.status !== 'PENDING') throw new ApiError(409, 'Tin tuyển dụng đã được xử lý, vui lòng tải lại');
   if (status === 'PUBLISHED' && job.company.status !== 'ACTIVE') throw new ApiError(409, 'Không thể duyệt tin của doanh nghiệp đang bị đình chỉ');
+  if (status === 'PUBLISHED' && job.company.verificationStatus !== 'VERIFIED') throw new ApiError(409, 'Không thể duyệt tin của doanh nghiệp chưa xác minh');
   const updated = await prisma.$transaction(async (transaction) => {
     const changed = await transaction.job.updateMany({ where: { id: job.id, status: 'PENDING', updatedAt: expectedUpdatedAt }, data: { status, moderationNote: normalizedNote } });
     if (changed.count !== 1) throw new ApiError(409, 'Tin tuyển dụng đã được quản trị viên khác xử lý, vui lòng tải lại');

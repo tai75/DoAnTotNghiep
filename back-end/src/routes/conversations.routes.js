@@ -4,7 +4,7 @@ const prisma = require('../config/prisma');
 const ApiError = require('../utils/apiError');
 const asyncHandler = require('../utils/asyncHandler');
 const validate = require('../middleware/validate');
-const { authenticate, authorize, requireActiveRecruiterCompany } = require('../middleware/auth');
+const { authenticate, authorize, requireActiveRecruiterCompany, requireVerifiedRecruiterCompany } = require('../middleware/auth');
 
 const idSchema = z.object({
   body: z.object({}),
@@ -45,7 +45,7 @@ async function participant(conversationId, user) {
 
 const router = require('express').Router();
 
-router.get('/unread-count', authenticate, authorize('CANDIDATE', 'RECRUITER'), requireActiveRecruiterCompany, asyncHandler(async (req, res) => {
+router.get('/unread-count', authenticate, authorize('CANDIDATE', 'RECRUITER'), requireActiveRecruiterCompany, requireVerifiedRecruiterCompany, asyncHandler(async (req, res) => {
   const count = await prisma.message.count({
     where: {
       readAt: null,
@@ -63,7 +63,7 @@ router.get('/unread-count', authenticate, authorize('CANDIDATE', 'RECRUITER'), r
   res.json({ success: true, data: { count } });
 }));
 
-router.get('/', authenticate, authorize('CANDIDATE', 'RECRUITER'), requireActiveRecruiterCompany, asyncHandler(async (req, res) => {
+router.get('/', authenticate, authorize('CANDIDATE', 'RECRUITER'), requireActiveRecruiterCompany, requireVerifiedRecruiterCompany, asyncHandler(async (req, res) => {
   const where = req.user.role === 'CANDIDATE'
     ? { application: { candidate: { userId: req.user.id } } }
     : { application: { job: { company: { recruiters: { some: { userId: req.user.id } } } } } };
@@ -85,7 +85,7 @@ router.get('/', authenticate, authorize('CANDIDATE', 'RECRUITER'), requireActive
   })) });
 }));
 
-router.post('/applications/:id', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, validate(idSchema), asyncHandler(async (req, res) => {
+router.post('/applications/:id', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, requireVerifiedRecruiterCompany, validate(idSchema), asyncHandler(async (req, res) => {
   const recruiter = await prisma.recruiter.findUnique({ where: { userId: req.user.id } });
   const application = await prisma.application.findUnique({ where: { id: req.params.id }, include: { job: true } });
   if (!recruiter || !application || recruiter.companyId !== application.job.companyId) throw new ApiError(403, 'Bạn không có quyền mở cuộc trò chuyện này');
@@ -97,13 +97,13 @@ router.post('/applications/:id', authenticate, authorize('RECRUITER'), requireAc
   res.status(201).json({ success: true, data: conversation });
 }));
 
-router.get('/:id/messages', authenticate, authorize('CANDIDATE', 'RECRUITER'), requireActiveRecruiterCompany, validate(idSchema), asyncHandler(async (req, res) => {
+router.get('/:id/messages', authenticate, authorize('CANDIDATE', 'RECRUITER'), requireActiveRecruiterCompany, requireVerifiedRecruiterCompany, validate(idSchema), asyncHandler(async (req, res) => {
   const conversation = await participant(req.params.id, req.user);
   const messages = await prisma.message.findMany({ where: { conversationId: conversation.id }, include: { sender: { select: { id: true, fullName: true, role: true } } }, orderBy: { createdAt: 'asc' } });
   res.json({ success: true, data: messages });
 }));
 
-router.post('/:id/messages', authenticate, authorize('CANDIDATE', 'RECRUITER'), requireActiveRecruiterCompany, sendMessageLimit, validate(messageSchema), asyncHandler(async (req, res) => {
+router.post('/:id/messages', authenticate, authorize('CANDIDATE', 'RECRUITER'), requireActiveRecruiterCompany, requireVerifiedRecruiterCompany, sendMessageLimit, validate(messageSchema), asyncHandler(async (req, res) => {
   const conversation = await participant(req.params.id, req.user);
   const content = stripHtml(req.body.content);
   if (!content) throw new ApiError(400, 'Tin nhắn không được để trống');
@@ -115,7 +115,7 @@ router.post('/:id/messages', authenticate, authorize('CANDIDATE', 'RECRUITER'), 
   res.status(201).json({ success: true, data: message });
 }));
 
-router.patch('/:id/read', authenticate, authorize('CANDIDATE', 'RECRUITER'), requireActiveRecruiterCompany, validate(idSchema), asyncHandler(async (req, res) => {
+router.patch('/:id/read', authenticate, authorize('CANDIDATE', 'RECRUITER'), requireActiveRecruiterCompany, requireVerifiedRecruiterCompany, validate(idSchema), asyncHandler(async (req, res) => {
   const conversation = await participant(req.params.id, req.user);
   await prisma.message.updateMany({ where: { conversationId: conversation.id, senderUserId: { not: req.user.id }, readAt: null }, data: { readAt: new Date() } });
   res.json({ success: true, data: { conversationId: conversation.id } });
