@@ -10,7 +10,7 @@ const chromePath = process.env.PLAYWRIGHT_CHROME_PATH || 'C:\\Program Files\\Goo
 
 export default defineConfig({
   testDir: './e2e',
-  testMatch: ['public-website.spec.js', 'qa01-authenticated.spec.js', 'auth-recovery.spec.js', 'admin-management.spec.js'],
+  testMatch: ['public-website.spec.js', 'qa01-authenticated.spec.js', 'auth-recovery.spec.js', 'admin-management.spec.js', 'account-management.spec.js'],
   fullyParallel: false,
   workers: 1,
   timeout: 120_000,
@@ -47,6 +47,7 @@ export default defineConfig({
         API_PUBLIC_URL: 'http://127.0.0.1:5101',
         CORS_ORIGINS: 'http://127.0.0.1:5174',
         ALERT_WORKER_ENABLED: 'false',
+        API_RATE_LIMIT_MAX: '5000',
         AUTH_RATE_LIMIT_MAX: '100',
         MATCHING_V2_ENABLED: 'false',
         MATCHING_V3_ENABLED: 'false',

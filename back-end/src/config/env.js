@@ -60,6 +60,7 @@ module.exports = {
   refreshTokenExpiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN || '7d',
   refreshCookieName: process.env.REFRESH_COOKIE_NAME || 'job_connect_refresh',
   refreshCookieSameSite,
+  apiRateLimitMax: Number(process.env.API_RATE_LIMIT_MAX || 300),
   authRateLimitMax: Number(process.env.AUTH_RATE_LIMIT_MAX || 10),
   smtp: {
     host: process.env.SMTP_HOST,

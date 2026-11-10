@@ -55,7 +55,8 @@ test.describe('Website công khai', () => {
     await page.goto('/jobs')
     const firstJob = page.locator('.public-job-card').first()
     if (await firstJob.count()) {
-      await firstJob.click()
+      await firstJob.press('Enter')
+      await expect(page).toHaveURL(/\/jobs\/\d+/)
       await expect(page.locator('.public-job-detail').getByRole('heading', { level: 1 })).toBeVisible()
       await expect(page.getByRole('heading', { name: 'Mô tả công việc' })).toBeVisible()
       await expect(page.getByText(/Hạn nộp:/).first()).toBeVisible()

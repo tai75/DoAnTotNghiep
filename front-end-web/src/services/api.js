@@ -99,6 +99,8 @@ export const authApi = {
   me: () => apiRequest('/auth/me'),
   refresh: () => apiRequest('/auth/refresh', { method: 'POST' }),
   logout: () => apiRequest('/auth/logout', { method: 'POST' }),
+  updateMe: (payload) => apiRequest('/auth/me', { method: 'PATCH', body: JSON.stringify(payload) }),
+  changePassword: (currentPassword, newPassword) => apiRequest('/auth/me/password', { method: 'PATCH', body: JSON.stringify({ currentPassword, newPassword }) }),
   requestPasswordReset: (email) => apiRequest('/auth/password-reset/request', { method: 'POST', body: JSON.stringify({ email }) }),
   confirmPasswordReset: (token, password) => apiRequest('/auth/password-reset/confirm', { method: 'POST', body: JSON.stringify({ token, password }) })
 }

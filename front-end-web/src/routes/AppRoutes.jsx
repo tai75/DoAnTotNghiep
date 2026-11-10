@@ -22,6 +22,7 @@ const MessagesPage = lazy(() => import('../pages/MessagesPage'))
 const CandidateInvitationsPage = lazy(() => import('../pages/CandidateInvitationsPage'))
 const CandidateInterviewsPage = lazy(() => import('../pages/CandidateInterviewsPage'))
 const RecruiterInterviewsPage = lazy(() => import('../pages/RecruiterInterviewsPage'))
+const AccountSettingsPage = lazy(() => import('../pages/AccountSettingsPage'))
 
 function RoleGuard({ roles, children }) {
   const { session, isLoading } = useAuth()
@@ -66,6 +67,7 @@ export default function AppRoutes() {
     <Route path="/companies/:id" element={<CompanyPage />} />
     <Route path="/recommendations" element={<RoleGuard roles={['CANDIDATE']}><RecommendationsPage /></RoleGuard>} />
     <Route path="/profile" element={<RoleGuard roles={['CANDIDATE']}><CandidateProfilePage /></RoleGuard>} />
+    <Route path="/settings" element={<RoleGuard roles={['CANDIDATE', 'RECRUITER', 'ADMIN']}><AccountSettingsPage /></RoleGuard>} />
     <Route path="/alerts" element={<RoleGuard roles={['CANDIDATE']}><AlertsPage /></RoleGuard>} />
     <Route path="/my-jobs" element={<RoleGuard roles={['CANDIDATE']}><MyJobsPage /></RoleGuard>} />
     <Route path="/invitations" element={<RoleGuard roles={['CANDIDATE']}><CandidateInvitationsPage /></RoleGuard>} />

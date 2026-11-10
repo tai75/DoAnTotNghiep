@@ -25,7 +25,7 @@ const database = vi.hoisted(() => {
     'job', 'jobScreeningQuestion', 'jobView', 'application', 'applicationAnswer',
     'applicationStatusHistory', 'applicationNote', 'matchScore', 'matchScoreV2',
     'embeddingCache', 'notification', 'companyFollow', 'auditLog', 'conversation', 'recommendation',
-    'message', 'candidateResume', 'jobAlert', 'skill', 'savedJob', 'talentInvitation', 'interview', 'report'
+    'message', 'candidateResume', 'candidateEducation', 'candidateExperience', 'candidateProject', 'jobAlert', 'skill', 'savedJob', 'talentInvitation', 'interview', 'report'
   ]
   const prisma = Object.fromEntries(modelNames.map((name) => [
     name,
@@ -169,6 +169,61 @@ describe('authentication integration workflow', () => {
     const rejected = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${refresh.body.data.token}`)
     expect(rejected.status).toBe(401)
   }, 15_000)
+
+  it('updates only the authenticated account with safe public fields', async () => {
+    const candidate = database.state.users[0]
+    const response = await request(app).patch('/api/auth/me').set('Authorization', `Bearer ${tokenFor(candidate)}`).send({ fullName: 'Tên đã cập nhật', phone: '0901234567' })
+    const invalid = await request(app).patch('/api/auth/me').set('Authorization', `Bearer ${tokenFor(candidate)}`).send({ role: 'ADMIN', status: 'BANNED' })
+
+    expect(response.status).toBe(200)
+    expect(response.body.data).not.toHaveProperty('passwordHash')
+    expect(database.prisma.user.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: candidate.id }, data: { fullName: 'Tên đã cập nhật', phone: '0901234567' } }))
+    expect(invalid.status).toBe(400)
+  })
+
+  it('requires the current password and revokes every session after password change', async () => {
+    const candidate = database.state.users[0]
+    candidate.passwordHash = await bcrypt.hash('CurrentPassword123!', 4)
+    const token = tokenFor(candidate)
+    const wrong = await request(app).patch('/api/auth/me/password').set('Authorization', `Bearer ${token}`).send({ currentPassword: 'WrongPassword!', newPassword: 'NewPassword123!' })
+    const changed = await request(app).patch('/api/auth/me/password').set('Authorization', `Bearer ${token}`).send({ currentPassword: 'CurrentPassword123!', newPassword: 'NewPassword123!' })
+    const rejected = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${token}`)
+
+    expect(wrong.status).toBe(400)
+    expect(changed.status).toBe(200)
+    expect(database.prisma.refreshToken.updateMany).toHaveBeenCalledWith({ where: { userId: candidate.id, revokedAt: null }, data: { revokedAt: expect.any(Date) } })
+    expect(rejected.status).toBe(401)
+  })
+})
+
+describe('candidate profile resource ownership', () => {
+  it.each([
+    ['educations', 'candidateEducation', { school: 'Đại học cập nhật' }],
+    ['experiences', 'candidateExperience', { title: 'Kỹ sư cao cấp' }],
+    ['projects', 'candidateProject', { name: 'Dự án cập nhật' }]
+  ])('updates an owned %s resource through the existing PATCH endpoint', async (path, model, payload) => {
+    const candidateUser = database.state.users[0]
+    database.prisma.candidate.findUnique.mockResolvedValue({ id: 101, userId: candidateUser.id })
+    database.prisma[model].findFirst.mockResolvedValue({ id: 70, candidateId: 101 })
+    database.prisma[model].update.mockResolvedValue({ id: 70, candidateId: 101, ...payload })
+
+    const response = await request(app).patch(`/api/candidates/me/${path}/70`).set('Authorization', `Bearer ${tokenFor(candidateUser)}`).send(payload)
+
+    expect(response.status).toBe(200)
+    expect(database.prisma[model].findFirst).toHaveBeenCalledWith({ where: { id: 70, candidateId: 101 } })
+    expect(database.prisma[model].update).toHaveBeenCalledWith({ where: { id: 70 }, data: payload })
+  })
+
+  it('does not allow a candidate to edit another candidate resource', async () => {
+    const candidateUser = database.state.users[0]
+    database.prisma.candidate.findUnique.mockResolvedValue({ id: 101, userId: candidateUser.id })
+    database.prisma.candidateEducation.findFirst.mockResolvedValue(null)
+
+    const response = await request(app).patch('/api/candidates/me/educations/999').set('Authorization', `Bearer ${tokenFor(candidateUser)}`).send({ school: 'Không được phép' })
+
+    expect(response.status).toBe(404)
+    expect(database.prisma.candidateEducation.update).not.toHaveBeenCalled()
+  })
 })
 
 describe('notification ownership workflow', () => {

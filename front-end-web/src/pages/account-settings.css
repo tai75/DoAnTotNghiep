@@ -1,0 +1,25 @@
+.account-settings-page { box-sizing: border-box; min-height: calc(100svh - 64px); padding: 44px max(20px, 6vw) 100px; color: var(--ink); background: #f7f9fc; }
+.account-settings-page > header { max-width: 760px; margin-bottom: 26px; }
+.account-settings-page h1 { margin: 6px 0 10px; color: var(--blue-950); font-size: clamp(28px, 4vw, 42px); }
+.account-settings-page header > p:last-child, .account-security > p, .account-hint { color: var(--muted); line-height: 1.55; }
+.account-settings-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; max-width: 1100px; }
+.account-card { border: 1px solid #e2eaf3; border-radius: 16px; padding: clamp(20px, 3vw, 30px); background: white; box-shadow: 0 8px 26px rgb(15 23 42 / 4%); }
+.account-card h2 { margin: 0 0 20px; color: var(--blue-950); font-size: 20px; }
+.account-card form { display: grid; gap: 16px; }
+.account-card label { display: grid; gap: 7px; color: #46596d; font-size: 13px; font-weight: 700; }
+.account-card label span { color: var(--muted); font-size: 11px; font-weight: 500; }
+.account-card input { box-sizing: border-box; width: 100%; min-height: 44px; border: 1px solid #ccd9e6; border-radius: 9px; padding: 10px 12px; color: var(--ink); background: white; font: inherit; }
+.account-card input:focus { border-color: var(--blue-700); outline: 3px solid rgb(37 99 235 / 14%); }
+.account-card button { justify-self: start; min-height: 44px; }
+.account-card dl { display: grid; gap: 0; margin: 0; }
+.account-card dl div { display: grid; grid-template-columns: 110px 1fr; gap: 16px; border-bottom: 1px solid #edf2f7; padding: 11px 0; }
+.account-card dt { color: var(--muted); font-size: 12px; }
+.account-card dd { margin: 0; overflow-wrap: anywhere; color: var(--blue-950); font-weight: 700; }
+.account-security { grid-column: 1 / -1; }
+.account-security form { max-width: 520px; }
+.account-message, .account-loading { max-width: 1068px; margin-bottom: 20px; border-radius: 10px; padding: 13px 16px; }
+.account-message.success { color: #166534; background: #dcfce7; }
+.account-message.error { color: #991b1b; background: #fee2e2; }
+.account-loading { border: 1px dashed #ccd9e6; color: var(--muted); background: white; }
+@media (max-width: 720px) { .account-settings-grid { grid-template-columns: 1fr; }.account-security { grid-column: auto; } }
+@media (max-width: 480px) { .account-settings-page { padding: 28px 14px 90px; }.account-card { border-radius: 13px; padding: 18px 14px; }.account-card dl div { grid-template-columns: 1fr; gap: 4px; }.account-card button { width: 100%; } }

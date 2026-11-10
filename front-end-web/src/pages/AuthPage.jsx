@@ -16,7 +16,11 @@ export default function AuthPage() {
   const [form, setForm] = useState(initialForm)
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const [message, setMessage] = useState(null)
+  const [message, setMessage] = useState(() => {
+    const changed = new URLSearchParams(location.search).get('passwordChanged') === '1' || window.sessionStorage.getItem('job-connect-password-changed') === '1'
+    if (changed) window.sessionStorage.removeItem('job-connect-password-changed')
+    return changed ? { type: 'success', text: 'Đổi mật khẩu thành công. Vui lòng đăng nhập lại.' } : null
+  })
   const isRegister = mode === 'register'
   useDocumentMeta(isRegister ? 'Đăng ký — Job Connect' : 'Đăng nhập — Job Connect', isRegister ? 'Tạo tài khoản ứng viên hoặc nhà tuyển dụng trên Job Connect.' : 'Đăng nhập Job Connect để quản lý hồ sơ và hoạt động tuyển dụng.')
 

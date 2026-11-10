@@ -39,6 +39,8 @@ export default function CandidateProfilePage() {
   const [message, setMessage] = useState(null)
   const [form, setForm] = useState({})
   const [resourceForm, setResourceForm] = useState(emptyEducation)
+  const [editingResource, setEditingResource] = useState(null)
+  const [savingResource, setSavingResource] = useState(false)
   const [errors, setErrors] = useState({})
 
   async function load() {
@@ -77,14 +79,32 @@ export default function CandidateProfilePage() {
     const nextErrors = validateForm(resourceForm, required)
     setErrors(nextErrors)
     if (Object.keys(nextErrors).length) return
+    setSavingResource(true)
     try {
-      await candidateApi.create(resource, resourceForm)
+      const payload = Object.fromEntries(Object.entries(resourceForm)
+        .filter(([key]) => !['id', 'candidateId', 'createdAt', 'updatedAt'].includes(key))
+        .map(([key, value]) => [key, ['fromDate', 'toDate'].includes(key) && value === '' ? null : value]))
+      if (editingResource?.resource === resource) await candidateApi.update(resource, editingResource.id, payload)
+      else await candidateApi.create(resource, payload)
       await load()
       setResourceForm(resource === 'educations' ? emptyEducation : resource === 'experiences' ? emptyExperience : emptyProject)
-      setMessage({ type: 'success', text: 'Đã thêm thông tin.' })
+      setEditingResource(null)
+      setMessage({ type: 'success', text: editingResource ? 'Đã cập nhật thông tin.' : 'Đã thêm thông tin.' })
     } catch (error) {
       setMessage({ type: 'error', text: error.message })
-    }
+    } finally { setSavingResource(false) }
+  }
+
+  function editResource(resource, item) {
+    setEditingResource({ resource, id: item.id })
+    setResourceForm({ ...item, fromDate: item.fromDate ? String(item.fromDate).slice(0, 10) : '', toDate: item.toDate ? String(item.toDate).slice(0, 10) : '' })
+    setErrors({})
+  }
+
+  function cancelResourceEdit(resource) {
+    setEditingResource(null)
+    setResourceForm(resource === 'educations' ? emptyEducation : resource === 'experiences' ? emptyExperience : emptyProject)
+    setErrors({})
   }
 
   async function removeResource(resource, id) {
@@ -115,7 +135,7 @@ export default function CandidateProfilePage() {
         <section className="job-search-card"><div><h2>Đang tìm việc</h2><p>Bật để nhà tuyển dụng tìm thấy hồ sơ của bạn và hồ sơ được dùng để gợi ý việc làm phù hợp.</p></div><label className="switch-row"><span>{form.isSearchable ? 'Đang bật' : 'Đang tắt'}</span><input type="checkbox" checked={Boolean(form.isSearchable)} onChange={(event) => { const value = event.target.checked; setForm({ ...form, isSearchable: value }); saveProfile({ isSearchable: value }) }} /></label></section>
         <button className="profile-submit">Lưu thay đổi</button>
       </form>}
-      {['education', 'experience', 'projects'].includes(tab) && <div data-profile-field={tab}><ResourceSection tab={tab} profile={profile} form={resourceForm} setForm={setResourceForm} save={saveResource} remove={removeResource} errors={errors} /></div>}
+      {['education', 'experience', 'projects'].includes(tab) && <div data-profile-field={tab}><ResourceSection tab={tab} profile={profile} form={resourceForm} setForm={setResourceForm} save={saveResource} remove={removeResource} edit={editResource} editing={editingResource} cancelEdit={cancelResourceEdit} saving={savingResource} errors={errors} /></div>}
       {tab === 'skills' && <div data-profile-field="skills"><h2>Kỹ năng</h2><p className="profile-hint">Chọn ít nhất 5 kỹ năng để nhà tuyển dụng hiểu rõ thế mạnh của bạn.</p><div className="skill-list">{skills.map((skill) => <label key={skill.id}><input type="checkbox" checked={profile.skills?.some((item) => item.skillId === skill.id)} onChange={async (event) => { const ids = profile.skills?.map((item) => item.skillId) || []; const next = event.target.checked ? [...ids, skill.id] : ids.filter((id) => id !== skill.id); try { const updated = await candidateApi.updateSkills(next); setProfile(updated); const nextCompleteness = await candidateApi.completeness(); setCompleteness(nextCompleteness) } catch (error) { setMessage({ type: 'error', text: error.message }) } }} /> {skill.name}</label>)}</div></div>}
       {tab === 'resumes' && <div data-profile-field="resumes"><ResumeSection profile={profile} load={load} setMessage={setMessage} /></div>}
     </section>
@@ -127,12 +147,13 @@ function Field({ label, name, value, onChange, textarea, error, ...props }) {
   return <label>{label}<Tag name={name} value={value} onChange={(event) => onChange((current) => ({ ...current, [name]: event.target.value }))} {...props} />{error && <small className="field-error">{error}</small>}</label>
 }
 
-function ResourceSection({ tab, profile, form, setForm, save, remove, errors }) {
+function ResourceSection({ tab, profile, form, setForm, save, remove, edit, editing, cancelEdit, saving, errors }) {
   const resource = tab === 'projects' ? 'projects' : `${tab}s`
   const items = profile[resource] || []
   const labels = { education: ['Trường học', 'school'], experience: ['Công ty', 'company'], projects: ['Tên dự án', 'name'] }
   const [label, field] = labels[tab]
-  return <div><h2>{tabs.find(([id]) => id === tab)[1]}</h2>{items.map((item) => <article className="resource-item" key={item.id}><strong>{item[field]}</strong><p>{item.major || item.title || item.description}</p><button onClick={() => remove(resource, item.id)}>Xóa</button></article>)}<div className="resource-form"><Field label={label} name={field} value={form[field] || ''} onChange={setForm} error={errors[field]} maxLength={255} />{tab === 'experience' && <Field label="Chức danh" name="title" value={form.title || ''} onChange={setForm} maxLength={180} />}{tab === 'education' && <Field label="Chuyên ngành" name="major" value={form.major || ''} onChange={setForm} maxLength={180} />}{tab === 'projects' && <Field label="Mô tả" name="description" value={form.description || ''} onChange={setForm} textarea maxLength={10000} />}<button className="profile-submit" onClick={() => save(resource, [field])}>Thêm mới</button></div></div>
+  const isEditing = editing?.resource === resource
+  return <div><h2>{tabs.find(([id]) => id === tab)[1]}</h2>{items.map((item) => <article className="resource-item" key={item.id}><strong>{item[field]}</strong><p>{item.major || item.title || item.description}</p><div className="resource-actions"><button type="button" onClick={() => edit(resource, item)}>Sửa</button><button type="button" onClick={() => remove(resource, item.id)}>Xóa</button></div></article>)}<div className="resource-form"><h3>{isEditing ? 'Chỉnh sửa thông tin' : 'Thêm thông tin mới'}</h3><Field label={label} name={field} value={form[field] || ''} onChange={setForm} error={errors[field]} maxLength={255} />{tab === 'experience' && <><Field label="Chức danh" name="title" value={form.title || ''} onChange={setForm} error={errors.title} maxLength={180} /><Field label="Mô tả công việc" name="description" value={form.description || ''} onChange={setForm} textarea maxLength={10000} /></>}{tab === 'education' && <><Field label="Chuyên ngành" name="major" value={form.major || ''} onChange={setForm} maxLength={180} /><Field label="Bằng cấp" name="degree" value={form.degree || ''} onChange={setForm} maxLength={100} /></>}{tab === 'projects' && <><Field label="Mô tả" name="description" value={form.description || ''} onChange={setForm} textarea maxLength={10000} /><Field label="Liên kết dự án" name="link" type="url" value={form.link || ''} onChange={setForm} error={errors.link} maxLength={500} /></>}<div className="resource-form-actions">{isEditing && <button type="button" className="secondary-button" onClick={() => cancelEdit(resource)}>Hủy chỉnh sửa</button>}<button type="button" className="profile-submit" disabled={saving} onClick={() => save(resource, tab === 'experience' ? [field, 'title'] : [field])}>{saving ? 'Đang lưu...' : isEditing ? 'Lưu thay đổi' : 'Thêm mới'}</button></div></div></div>
 }
 
 function ResumeSection({ profile, load, setMessage }) {

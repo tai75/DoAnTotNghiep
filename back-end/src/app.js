@@ -46,7 +46,7 @@ app.use(cors({
 }));
 app.use('/api', rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 300,
+  limit: config.apiRateLimitMax,
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: 'Quá nhiều yêu cầu, vui lòng thử lại sau.' }

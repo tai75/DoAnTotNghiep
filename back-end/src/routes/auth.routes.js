@@ -54,8 +54,8 @@ const loginSchema = z.object({
 
 const updateProfileSchema = z.object({
   body: z.object({
-    fullName: z.string().min(2).max(150).optional(),
-    phone: z.string().max(30).nullable().optional()
+    fullName: z.string().trim().min(2).max(150).optional(),
+    phone: z.string().trim().max(30).nullable().optional()
   }).refine((body) => Object.keys(body).length > 0, 'Cần có ít nhất một trường để cập nhật'),
   params: z.object({}),
   query: z.object({})
