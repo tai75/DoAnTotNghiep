@@ -443,6 +443,57 @@ describe('public job and company detail regressions', () => {
     expect(response.body.data.reviews).toHaveLength(reviews.length)
     if (reviews.length) expect(response.body.data.reviews[0].author).toEqual({ id: 1, fullName: 'Candidate' })
   })
+
+  it('lists only companies with active published jobs and selects public fields', async () => {
+    const items = [{
+      id: 31,
+      name: 'QA Company',
+      description: 'Public profile',
+      logoUrl: '/assets/logos/company.png',
+      address: 'Hà Nội',
+      employeeCount: 120,
+      industry: 'Công nghệ',
+      _count: { jobs: 2 }
+    }]
+    database.prisma.company.findMany
+      .mockResolvedValueOnce(items)
+      .mockResolvedValueOnce([{ industry: 'Công nghệ' }])
+    database.prisma.company.count.mockResolvedValue(1)
+    database.prisma.$transaction.mockImplementation(async (operations) => Promise.all(operations))
+
+    const response = await request(app).get('/api/companies?search=QA&page=1&limit=12')
+
+    expect(response.status).toBe(200)
+    const listCall = database.prisma.company.findMany.mock.calls[0][0]
+    expect(listCall.where.jobs.some).toMatchObject({ status: 'PUBLISHED' })
+    expect(listCall.where.jobs.some.OR).toEqual([
+      { deadline: { gte: expect.any(Date) } },
+      { deadline: null }
+    ])
+    expect(listCall).toMatchObject({ skip: 0, take: 12 })
+    expect(listCall.select).toEqual({
+      id: true,
+      name: true,
+      description: true,
+      logoUrl: true,
+      address: true,
+      employeeCount: true,
+      industry: true,
+      _count: { select: { jobs: { where: listCall.where.jobs.some } } }
+    })
+    expect(listCall.select).not.toHaveProperty('recruiters')
+    expect(listCall.select).not.toHaveProperty('email')
+    expect(response.body.data.items[0]).toMatchObject({ id: 31, activeJobCount: 2 })
+    expect(response.body.data.items[0]).not.toHaveProperty('_count')
+    expect(response.body.data.pagination).toEqual({ page: 1, limit: 12, total: 1, totalPages: 1 })
+  })
+
+  it('rejects unsafe public company pagination before querying the database', async () => {
+    const response = await request(app).get('/api/companies?page=0&limit=25')
+
+    expect(response.status).toBe(400)
+    expect(database.prisma.$transaction).not.toHaveBeenCalled()
+  })
 })
 
 describe('application and ownership workflows', () => {

@@ -8,6 +8,9 @@ const AuthPage = lazy(() => import('../pages/AuthPage'))
 const PasswordRecoveryPage = lazy(() => import('../pages/PasswordRecoveryPage'))
 const JobBoardPage = lazy(() => import('../pages/JobBoardPage'))
 const CompanyPage = lazy(() => import('../pages/CompanyPage'))
+const HomePage = lazy(() => import('../pages/HomePage'))
+const CompaniesPage = lazy(() => import('../pages/CompaniesPage'))
+const NotFoundPage = lazy(() => import('../pages/NotFoundPage'))
 const AdminDashboardPage = lazy(() => import('../pages/AdminDashboardPage'))
 const CandidateProfilePage = lazy(() => import('../pages/CandidateProfilePage'))
 const MyJobsPage = lazy(() => import('../pages/MyJobsPage'))
@@ -51,6 +54,7 @@ export default function AppRoutes() {
     <Route path="/register" element={<GuestRoute />} />
     <Route path="/forgot-password" element={<PasswordRecoveryPage />} />
     <Route path="/reset-password" element={<PasswordRecoveryPage />} />
+    <Route path="/" element={<HomePage />} />
     <Route path="/admin/*" element={<RoleGuard roles={['ADMIN']}><AdminDashboardPage /></RoleGuard>} />
     <Route path="/recruiter/talent" element={<RoleGuard roles={['RECRUITER']}><RecruiterTalentPage /></RoleGuard>} />
     <Route path="/recruiter/interviews" element={<RoleGuard roles={['RECRUITER']}><RecruiterInterviewsPage /></RoleGuard>} />
@@ -58,6 +62,7 @@ export default function AppRoutes() {
     <Route path="/recruiter/*" element={<RoleGuard roles={['RECRUITER']}><RecruiterDashboardPage /></RoleGuard>} />
     <Route path="/jobs" element={<JobBoardPage />} />
     <Route path="/jobs/:id" element={<JobBoardPage />} />
+    <Route path="/companies" element={<CompaniesPage />} />
     <Route path="/companies/:id" element={<CompanyPage />} />
     <Route path="/recommendations" element={<RoleGuard roles={['CANDIDATE']}><RecommendationsPage /></RoleGuard>} />
     <Route path="/profile" element={<RoleGuard roles={['CANDIDATE']}><CandidateProfilePage /></RoleGuard>} />
@@ -70,6 +75,6 @@ export default function AppRoutes() {
     <Route path="/messages" element={<RoleGuard roles={['CANDIDATE', 'RECRUITER']}><MessagesPage /></RoleGuard>} />
     <Route path="/applications" element={<Navigate to="/my-jobs?tab=applied" replace />} />
     <Route path="/saved-jobs" element={<Navigate to="/my-jobs?tab=saved" replace />} />
-    <Route path="*" element={<GuestRoute />} />
+    <Route path="*" element={<NotFoundPage />} />
   </Routes></Suspense></RouteErrorBoundary>
 }

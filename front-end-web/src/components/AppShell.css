@@ -9,6 +9,7 @@
 .app-nav a { align-items: center; border-bottom: 2px solid transparent; color: var(--color-muted); display: flex; gap: 6px; padding: 21px 12px; text-decoration: none; }
 .app-nav a:hover, .app-nav a.active { border-color: var(--color-primary); color: var(--color-primary-strong); }
 .app-actions { align-items: center; display: flex; gap: 12px; }
+.app-register-link { background: var(--color-primary); border-radius: var(--radius-sm); color: #fff; font-weight: 700; padding: 10px 14px; text-decoration: none; white-space: nowrap; }
 .app-action-button, .app-account-button { background: transparent; border: 0; cursor: pointer; }
 .app-action-button { color: var(--color-muted); font-size: 23px; position: relative; }
 .app-action-button b { align-items: center; background: var(--color-danger); border-radius: 999px; color: #fff; display: flex; font-size: 10px; height: 17px; justify-content: center; min-width: 17px; padding: 0 3px; position: absolute; right: -8px; top: -5px; }
@@ -95,6 +96,7 @@
   .app-mobile-nav a.active, .app-mobile-nav button:hover { color: var(--color-primary-strong); }
 }
 @media (max-width: 480px) {
+  .app-register-link { display: none; }
   .app-header-inner { flex-wrap: wrap; padding-block: 8px; }
   .app-search { flex: 1 0 100%; max-width: none; order: 4; }
   .app-actions { gap: 8px; }

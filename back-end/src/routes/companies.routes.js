@@ -41,6 +41,16 @@ const updateSchema = z.object({
 });
 
 const router = require('express').Router();
+const listSchema = z.object({
+  body: z.object({}),
+  params: z.object({}),
+  query: z.object({
+    search: z.string().trim().max(180).optional(),
+    industry: z.string().trim().max(150).optional(),
+    page: z.coerce.number().int().positive().default(1),
+    limit: z.coerce.number().int().min(1).max(24).default(12)
+  })
+});
 const allowedLogoTypes = new Map([
   ['image/jpeg', ['.jpg', '.jpeg']],
   ['image/png', ['.png']]
@@ -66,6 +76,44 @@ router.get('/me', authenticate, authorize('RECRUITER'), asyncHandler(async (req,
   const recruiter = await prisma.recruiter.findUnique({ where: { userId: req.user.id }, include: { company: true } });
   if (!recruiter) return res.status(403).json({ success: false, message: 'Tài khoản chưa được liên kết với nhà tuyển dụng' });
   res.json({ success: true, data: recruiter.company });
+}));
+
+router.get('/', validate(listSchema), asyncHandler(async (req, res) => {
+  const { search, industry, page, limit } = req.query;
+  const activeJobs = { status: 'PUBLISHED', OR: [{ deadline: { gte: new Date() } }, { deadline: null }] };
+  const where = {
+    jobs: { some: activeJobs },
+    ...(search ? { OR: [{ name: { contains: search } }, { industry: { contains: search } }, { address: { contains: search } }] } : {}),
+    ...(industry ? { industry: { equals: industry } } : {})
+  };
+  const [items, total, industries] = await prisma.$transaction([
+    prisma.company.findMany({
+      where,
+      select: {
+        id: true, name: true, description: true, logoUrl: true, address: true,
+        employeeCount: true, industry: true,
+        _count: { select: { jobs: { where: activeJobs } } }
+      },
+      orderBy: [{ jobs: { _count: 'desc' } }, { name: 'asc' }],
+      skip: (page - 1) * limit,
+      take: limit
+    }),
+    prisma.company.count({ where }),
+    prisma.company.findMany({
+      where: { jobs: { some: activeJobs }, industry: { not: null } },
+      distinct: ['industry'],
+      select: { industry: true },
+      orderBy: { industry: 'asc' }
+    })
+  ]);
+  res.json({
+    success: true,
+    data: {
+      items: items.map(({ _count, ...company }) => ({ ...company, activeJobCount: _count.jobs })),
+      industries: industries.map(({ industry: value }) => value).filter(Boolean),
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) }
+    }
+  });
 }));
 
 router.post('/:id/follow', authenticate, authorize('CANDIDATE'), validate(idSchema), asyncHandler(async (req, res) => {

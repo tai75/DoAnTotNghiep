@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/auth'
+import useDocumentMeta from '../hooks/useDocumentMeta'
 
 const ASSET_URL = (import.meta.env.VITE_ASSET_URL || '').replace(/\/$/, '')
 const REFERENCE_IMAGE = `${ASSET_URL}/assets/-9ogxV-jue_gO6hLkt8wUrR9p_ZjF5bSU3RFoSMRneSqPNpxW794iOooyOy-udg2rhlmOFUOAfo4ImX_3lDKJrabmkbVvZRtxQcJaFUOr7Ht0MBTdC8o60DJmA23heR5PSPT2MfLrYAXwt3RkQr2EeCjVEsf-kExiKLZsfkaMEHep_SD6k-mXaaVxuGWfLxv.jpg`
@@ -17,6 +18,7 @@ export default function AuthPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [message, setMessage] = useState(null)
   const isRegister = mode === 'register'
+  useDocumentMeta(isRegister ? 'Đăng ký — Job Connect' : 'Đăng nhập — Job Connect', isRegister ? 'Tạo tài khoản ứng viên hoặc nhà tuyển dụng trên Job Connect.' : 'Đăng nhập Job Connect để quản lý hồ sơ và hoạt động tuyển dụng.')
 
   function updateField(event) {
     const { name, value } = event.target

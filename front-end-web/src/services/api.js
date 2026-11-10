@@ -124,6 +124,7 @@ export const jobsApi = {
 }
 
 export const companiesApi = {
+  list: (filters = {}) => apiRequest(`/companies?${new URLSearchParams(Object.fromEntries(Object.entries(filters).filter(([, value]) => value)))}`, { headers: {} }),
   get: (id) => apiRequest(`/companies/${id}`),
   following: (id) => apiRequest(`/companies/${id}/following`),
   follow: (id) => apiRequest(`/companies/${id}/follow`, { method: 'POST' }),

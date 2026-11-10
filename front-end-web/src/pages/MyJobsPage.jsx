@@ -7,11 +7,12 @@ import { EmptyState, Tabs } from '../components/ui'
 import { terminalApplicationStatuses } from '../utils/applicationStatus'
 import './my-jobs.css'
 
-const statusLabels = { APPLIED: 'Đã nộp', REVIEWING: 'Đang xem xét', SHORTLISTED: 'Vào vòng trong', INTERVIEWING: 'Phỏng vấn', OFFERED: 'Đã đề nghị', ACCEPTED: 'Đã nhận', REJECTED: 'Từ chối', WITHDRAWN: 'Đã rút' }
+const statusLabels = new Proxy({ APPLIED: 'Đã nộp', REVIEWING: 'Đang xem xét', SHORTLISTED: 'Vào vòng trong', INTERVIEWING: 'Phỏng vấn', OFFERED: 'Đã đề nghị', ACCEPTED: 'Đã nhận', REJECTED: 'Từ chối', WITHDRAWN: 'Đã rút' }, { get: (labels, status) => labels[status] || 'Trạng thái khác' })
 const closedStatuses = terminalApplicationStatuses
+const employmentLabels = { FULL_TIME: 'Toàn thời gian', PART_TIME: 'Bán thời gian', INTERNSHIP: 'Thực tập', CONTRACT: 'Hợp đồng', REMOTE: 'Từ xa', HYBRID: 'Kết hợp' }
 
 function JobSummary({ job }) {
-  return <div className="my-job-summary"><div className="company-logo">{job.company?.name?.charAt(0) || 'J'}</div><div><h2>{job.title}</h2><p>{job.company?.name} · {job.location || 'Toàn quốc'}</p><small>{job.employmentType || 'Toàn thời gian'}</small></div></div>
+  return <div className="my-job-summary"><div className="company-logo">{job.company?.name?.charAt(0) || 'J'}</div><div><h2>{job.title}</h2><p>{job.company?.name} · {job.location || 'Toàn quốc'}</p><small>{employmentLabels[job.employmentType] || 'Hình thức linh hoạt'}</small></div></div>
 }
 
 function EmptyJobs({ tab }) {

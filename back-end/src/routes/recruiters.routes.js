@@ -129,7 +129,7 @@ router.get('/funnel/:jobId', validate(funnelSchema), asyncHandler(async (req, re
  if (!job) throw new ApiError(404, 'Không tìm thấy việc làm');
  const applications = await prisma.application.findMany({ where: { jobId: job.id }, select: { history: { select: { toStatus: true } } } });
  const hasStage = (stage) => applications.filter((item) => item.history.some((entry) => entry.toStatus === stage)).length;
- res.json({ success: true, data: { job: { id: job.id, title: job.title }, funnel: [{ stage: 'Lượt xem', value: await prisma.jobView.count({ where: { jobId: job.id } }) }, { stage: 'Nộp hồ sơ', value: applications.length }, { stage: 'Shortlisted', value: hasStage('SHORTLISTED') }, { stage: 'Phỏng vấn', value: hasStage('INTERVIEWING') }, { stage: 'Offer', value: hasStage('OFFERED') }] } });
+ res.json({ success: true, data: { job: { id: job.id, title: job.title }, funnel: [{ stage: 'Lượt xem', value: await prisma.jobView.count({ where: { jobId: job.id } }) }, { stage: 'Nộp hồ sơ', value: applications.length }, { stage: 'Vào vòng trong', value: hasStage('SHORTLISTED') }, { stage: 'Phỏng vấn', value: hasStage('INTERVIEWING') }, { stage: 'Đề nghị nhận việc', value: hasStage('OFFERED') }] } });
 }));
 
 module.exports = router;

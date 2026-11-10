@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { authApi } from '../services/api'
+import useDocumentMeta from '../hooks/useDocumentMeta'
 
 export default function PasswordRecoveryPage() {
   const location = useLocation()
@@ -13,6 +14,7 @@ export default function PasswordRecoveryPage() {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState(null)
   const [completed, setCompleted] = useState(false)
+  useDocumentMeta(isReset ? 'Đặt lại mật khẩu — Job Connect' : 'Quên mật khẩu — Job Connect', isReset ? 'Tạo mật khẩu mới cho tài khoản Job Connect.' : 'Nhận hướng dẫn khôi phục tài khoản Job Connect.')
 
   useEffect(() => {
     if (!completed) return undefined
