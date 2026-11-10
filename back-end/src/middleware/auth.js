@@ -40,4 +40,26 @@ function authorize(...roles) {
   };
 }
 
-module.exports = { authenticate, authorize };
+async function requireActiveRecruiterCompany(req, res, next) {
+  if (!req.user || req.user.role !== 'RECRUITER') return next();
+
+  try {
+    const recruiter = await prisma.recruiter.findUnique({
+      where: { userId: req.user.id },
+      select: {
+        id: true,
+        companyId: true,
+        company: { select: { status: true } }
+      }
+    });
+    if (!recruiter || recruiter.company?.status !== 'ACTIVE') {
+      return next(new ApiError(403, 'Doanh nghiệp đang bị đình chỉ hoạt động'));
+    }
+    req.recruiter = recruiter;
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+}
+
+module.exports = { authenticate, authorize, requireActiveRecruiterCompany };

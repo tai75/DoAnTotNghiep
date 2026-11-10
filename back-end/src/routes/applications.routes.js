@@ -3,7 +3,7 @@ const prisma = require('../config/prisma');
 const ApiError = require('../utils/apiError');
 const asyncHandler = require('../utils/asyncHandler');
 const validate = require('../middleware/validate');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorize, requireActiveRecruiterCompany } = require('../middleware/auth');
 const config = require('../config/env');
 const { calculateMatchScore, buildRuleExplanation } = require('../services/matching.service');
 const { sendEmail } = require('../services/mail.service');
@@ -91,8 +91,22 @@ const router = require('express').Router();
 
 function applicationForViewer(application, isCandidate) {
   if (!isCandidate) return application;
-  const { notes, ...candidateView } = application;
-  return candidateView;
+  const { notes, answers, ...candidateView } = application;
+  return {
+    ...candidateView,
+    ...(answers ? {
+      answers: answers.map(({ question, ...answer }) => ({
+        ...answer,
+        question: question ? {
+          id: question.id,
+          type: question.type,
+          question: question.question,
+          options: question.options,
+          isRequired: question.isRequired
+        } : question
+      }))
+    } : {})
+  };
 }
 
 async function sendStatusEmailBestEffort({ applicationId, email, jobTitle, status }) {
@@ -217,7 +231,7 @@ router.get('/me', authenticate, authorize('CANDIDATE'), asyncHandler(async (req,
   res.json({ success: true, data: applications });
 }));
 
-router.get('/managed', authenticate, authorize('RECRUITER'), validate(recruiterListSchema), asyncHandler(async (req, res) => {
+router.get('/managed', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, validate(recruiterListSchema), asyncHandler(async (req, res) => {
   const recruiter = await prisma.recruiter.findUnique({ where: { userId: req.user.id } });
   if (!recruiter) throw new ApiError(403, 'Tài khoản chưa được liên kết với nhà tuyển dụng');
   const { jobId, status, minScore, sort, page, limit } = req.query;
@@ -241,7 +255,7 @@ router.get('/managed', authenticate, authorize('RECRUITER'), validate(recruiterL
   res.json({ success: true, data: { items, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } } });
 }));
 
-router.post('/managed/bulk-reject', authenticate, authorize('RECRUITER'), validate(bulkRejectSchema), asyncHandler(async (req, res) => {
+router.post('/managed/bulk-reject', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, validate(bulkRejectSchema), asyncHandler(async (req, res) => {
   const recruiter = await prisma.recruiter.findUnique({ where: { userId: req.user.id } });
   if (!recruiter) throw new ApiError(403, 'Tài khoản chưa được liên kết với nhà tuyển dụng');
   const applicationIds = [...new Set(req.body.applicationIds)];
@@ -272,7 +286,7 @@ router.post('/managed/bulk-reject', authenticate, authorize('RECRUITER'), valida
   res.json({ success: true, data: { applicationIds: updated } });
 }));
 
-router.post('/:id/notes', authenticate, authorize('RECRUITER'), validate(noteSchema), asyncHandler(async (req, res) => {
+router.post('/:id/notes', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, validate(noteSchema), asyncHandler(async (req, res) => {
   const recruiter = await prisma.recruiter.findUnique({ where: { userId: req.user.id } });
   const application = await prisma.application.findUnique({ where: { id: req.params.id }, include: { job: true } });
   if (!recruiter || !application || application.job.companyId !== recruiter.companyId) throw new ApiError(403, 'Bạn không quản lý việc làm này');
@@ -280,7 +294,7 @@ router.post('/:id/notes', authenticate, authorize('RECRUITER'), validate(noteSch
   res.status(201).json({ success: true, data: note });
 }));
 
-router.delete('/:id/notes/:noteId', authenticate, authorize('RECRUITER'), validate(noteIdSchema), asyncHandler(async (req, res) => {
+router.delete('/:id/notes/:noteId', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, validate(noteIdSchema), asyncHandler(async (req, res) => {
   const recruiter = await prisma.recruiter.findUnique({ where: { userId: req.user.id } });
   const note = await prisma.applicationNote.findUnique({ where: { id: req.params.noteId }, include: { application: { include: { job: true } } } });
   if (!recruiter || !note || note.application.job.companyId !== recruiter.companyId) throw new ApiError(403, 'Bạn không quản lý việc làm này');
@@ -288,7 +302,7 @@ router.delete('/:id/notes/:noteId', authenticate, authorize('RECRUITER'), valida
   res.json({ success: true });
 }));
 
-router.get('/:id', authenticate, validate(idSchema), asyncHandler(async (req, res) => {
+router.get('/:id', authenticate, requireActiveRecruiterCompany, validate(idSchema), asyncHandler(async (req, res) => {
   const application = await prisma.application.findUnique({
     where: { id: req.params.id },
     include: { candidate: { include: { user: { select: { id: true, fullName: true, phone: true } }, skills: { include: { skill: true } }, educations: true, experiences: true, projects: true } }, resume: true, job: { include: { company: true } }, history: { orderBy: { createdAt: 'asc' } }, matchScore: true, answers: { include: { question: true } }, notes: { include: { author: { select: { id: true, fullName: true } } }, orderBy: { createdAt: 'asc' } } }
@@ -325,7 +339,7 @@ router.patch('/:id/withdraw', authenticate, authorize('CANDIDATE'), validate(wit
   res.json({ success: true, data: updated });
 }));
 
-router.patch('/:id/status', authenticate, authorize('RECRUITER'), validate(statusSchema), asyncHandler(async (req, res) => {
+router.patch('/:id/status', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, validate(statusSchema), asyncHandler(async (req, res) => {
   const application = await prisma.application.findUnique({
     where: { id: req.params.id },
     include: { job: true, candidate: { include: { user: { select: { id: true, email: true } } } } }

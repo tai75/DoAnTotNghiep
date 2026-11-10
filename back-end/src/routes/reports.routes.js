@@ -3,7 +3,7 @@ const prisma = require('../config/prisma');
 const ApiError = require('../utils/apiError');
 const asyncHandler = require('../utils/asyncHandler');
 const validate = require('../middleware/validate');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorize, requireActiveRecruiterCompany } = require('../middleware/auth');
 
 const createSchema = z.object({
   body: z.object({
@@ -17,7 +17,7 @@ const createSchema = z.object({
 });
 
 const router = require('express').Router();
-router.use(authenticate, authorize('CANDIDATE', 'RECRUITER'));
+router.use(authenticate, authorize('CANDIDATE', 'RECRUITER'), requireActiveRecruiterCompany);
 
 router.post('/', validate(createSchema), asyncHandler(async (req, res) => {
   const { targetType, targetId, reason, description } = req.body;

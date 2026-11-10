@@ -39,17 +39,17 @@
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
-    "express": "^5.1.0",
+    "express": "5.3.0",
     "express-rate-limit": "^8.3.1",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
-    "mammoth": "^1.8.0",
+    "mammoth": "1.13.0",
     "morgan": "^1.10.0",
     "multer": "^2.5.0",
     "node-cron": "^4.6.0",
-    "nodemailer": "^7.0.6",
+    "nodemailer": "10.4.1",
     "pdf-parse": "^1.1.1",
-    "zod": "^3.25.0"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "nodemon": "^3.1.10",

@@ -2,7 +2,7 @@ const { z } = require('zod');
 const prisma = require('../config/prisma');
 const asyncHandler = require('../utils/asyncHandler');
 const validate = require('../middleware/validate');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorize, requireActiveRecruiterCompany } = require('../middleware/auth');
 const ApiError = require('../utils/apiError');
 const multer = require('multer');
 const path = require('path');
@@ -72,7 +72,7 @@ function hasValidLogoSignature(fileOrBuffer, mimeType) {
   return validLogo(buffer, mimeType);
 }
 
-router.get('/me', authenticate, authorize('RECRUITER'), asyncHandler(async (req, res) => {
+router.get('/me', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, asyncHandler(async (req, res) => {
   const recruiter = await prisma.recruiter.findUnique({ where: { userId: req.user.id }, include: { company: true } });
   if (!recruiter) return res.status(403).json({ success: false, message: 'Tài khoản chưa được liên kết với nhà tuyển dụng' });
   res.json({ success: true, data: recruiter.company });
@@ -175,7 +175,7 @@ router.get('/:id', validate(idSchema), asyncHandler(async (req, res) => {
   res.json({ success: true, data: { ...company, reviews, averageRating, followerCount: company._count.followers, jobs: company.jobs.map(({ _count, ...job }) => ({ ...job, applicantCount: _count.applications })) } });
 }));
 
-router.patch('/me', authenticate, authorize('RECRUITER'), validate(updateSchema), asyncHandler(async (req, res) => {
+router.patch('/me', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, validate(updateSchema), asyncHandler(async (req, res) => {
   const recruiter = await prisma.recruiter.findUnique({ where: { userId: req.user.id }, include: { company: { select: { status: true } } } });
   if (!recruiter) return res.status(403).json({ success: false, message: 'Tài khoản chưa được liên kết với nhà tuyển dụng' });
   if (recruiter.company.status !== 'ACTIVE') throw new ApiError(403, 'Doanh nghiệp đang bị đình chỉ, không thể cập nhật hồ sơ');
@@ -183,7 +183,7 @@ router.patch('/me', authenticate, authorize('RECRUITER'), validate(updateSchema)
   res.json({ success: true, data: company });
 }));
 
-router.post('/me/logo', authenticate, authorize('RECRUITER'), (req, res, next) => {
+router.post('/me/logo', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, (req, res, next) => {
   logoUpload.single('file')(req, res, (error) => {
     if (!error) return next();
     return res.status(400).json({ success: false, message: error.message || 'Logo không hợp lệ' });

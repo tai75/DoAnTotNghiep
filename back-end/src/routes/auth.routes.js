@@ -191,6 +191,33 @@ async function rotateRefreshToken(rawToken, database = prisma, now = new Date())
   });
 }
 
+async function revokeRefreshSession(rawToken, database = prisma, now = new Date()) {
+  if (!rawToken) return { status: 'missing' };
+  const tokenHash = hashToken(rawToken);
+  return database.$transaction(async (transaction) => {
+    const stored = await transaction.refreshToken.findUnique({ where: { tokenHash } });
+    if (!stored) return { status: 'invalid' };
+    if (stored.revokedAt) return { status: 'revoked' };
+
+    const claimed = await transaction.refreshToken.updateMany({
+      where: { id: stored.id, revokedAt: null },
+      data: { revokedAt: now }
+    });
+    if (claimed.count !== 1) return { status: 'revoked' };
+    if (stored.expiresAt <= now) return { status: 'expired' };
+
+    await transaction.refreshToken.updateMany({
+      where: { userId: stored.userId, revokedAt: null },
+      data: { revokedAt: now }
+    });
+    await transaction.user.update({
+      where: { id: stored.userId },
+      data: { tokenVersion: { increment: 1 } }
+    });
+    return { status: 'revoked' };
+  });
+}
+
 async function sendResetLink(email, token) {
   const link = `${config.frontendUrl}/reset-password?token=${encodeURIComponent(token)}`;
   await sendEmail({
@@ -338,11 +365,9 @@ router.patch('/me/password', authenticate, validate(changePasswordSchema), async
   res.json({ success: true, message: 'Đổi mật khẩu thành công, vui lòng đăng nhập lại' });
 }));
 
-router.post('/logout', authenticate, asyncHandler(async (req, res) => {
-  await prisma.$transaction([
-    prisma.user.update({ where: { id: req.user.id }, data: { tokenVersion: { increment: 1 } } }),
-    prisma.refreshToken.updateMany({ where: { userId: req.user.id, revokedAt: null }, data: { revokedAt: new Date() } })
-  ]);
+router.post('/logout', asyncHandler(async (req, res) => {
+  const rawToken = parseCookies(req.headers.cookie)[config.refreshCookieName];
+  await revokeRefreshSession(rawToken);
   clearRefreshCookie(res);
   res.json({ success: true, message: 'Đăng xuất thành công' });
 }));
@@ -353,3 +378,4 @@ module.exports.passwordResetRequestRateLimit = passwordResetRequestRateLimit;
 module.exports.durationToMs = durationToMs;
 module.exports.refreshCookieOptions = refreshCookieOptions;
 module.exports.rotateRefreshToken = rotateRefreshToken;
+module.exports.revokeRefreshSession = revokeRefreshSession;

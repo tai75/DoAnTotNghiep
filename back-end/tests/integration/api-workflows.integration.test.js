@@ -99,6 +99,7 @@ function resetDatabase() {
   prisma.candidate.create.mockImplementation(async ({ data }) => ({ id: 100 + data.userId, ...data }))
   prisma.company.create.mockImplementation(async ({ data }) => ({ id: 50, ...data }))
   prisma.recruiter.create.mockImplementation(async ({ data }) => ({ id: 60, ...data }))
+  prisma.recruiter.findUnique.mockResolvedValue({ id: 60, userId: 2, companyId: 50, company: { status: 'ACTIVE' } })
   prisma.refreshToken.create.mockImplementation(async ({ data }) => {
     const item = { id: state.nextRefreshId++, revokedAt: null, ...data }
     state.refreshTokens.push(item)
@@ -164,11 +165,64 @@ describe('authentication integration workflow', () => {
     expect(refresh.status).toBe(200)
     expect(cookieValue(refresh)).not.toBe(oldCookie)
 
-    const logout = await request(app).post('/api/auth/logout').set('Authorization', `Bearer ${refresh.body.data.token}`)
+    const logout = await request(app).post('/api/auth/logout')
+      .set('Authorization', `Bearer ${refresh.body.data.token}`)
+      .set('Cookie', cookieValue(refresh))
     expect(logout.status).toBe(200)
     const rejected = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${refresh.body.data.token}`)
     expect(rejected.status).toBe(401)
   }, 15_000)
+
+  it('revokes the refresh session with an expired access token and permits a later login', async () => {
+    const candidate = database.state.users[0]
+    candidate.passwordHash = await bcrypt.hash('Password123!', 4)
+    const rawRefreshToken = 'refresh-token-issued-before-suspension-test'
+    database.state.refreshTokens.push({
+      id: database.state.nextRefreshId++,
+      userId: candidate.id,
+      tokenHash: crypto.createHash('sha256').update(rawRefreshToken).digest('hex'),
+      expiresAt: new Date(Date.now() + 60_000),
+      revokedAt: null
+    })
+    const refreshCookie = `job_connect_refresh=${rawRefreshToken}`
+    const expiredAccessToken = jwt.sign(
+      { userId: candidate.id, role: candidate.role, tokenVersion: candidate.tokenVersion },
+      process.env.JWT_SECRET,
+      { algorithm: 'HS256', expiresIn: -1, issuer: 'job-connect-api', audience: 'job-connect-web', subject: String(candidate.id) }
+    )
+
+    const logout = await request(app).post('/api/auth/logout')
+      .set('Authorization', `Bearer ${expiredAccessToken}`)
+      .set('Cookie', refreshCookie)
+    const repeatedLogout = await request(app).post('/api/auth/logout').set('Cookie', refreshCookie)
+    const tokenVersionAfterRepeatedLogout = candidate.tokenVersion
+    const rejectedRefresh = await request(app).post('/api/auth/refresh').set('Cookie', refreshCookie)
+    const nextLogin = await request(app).post('/api/auth/login').send({ email: candidate.email, password: 'Password123!' })
+
+    expect(logout.status).toBe(200)
+    expect(cookieValue(logout)).toContain('job_connect_refresh=')
+    expect(repeatedLogout.status).toBe(200)
+    expect(tokenVersionAfterRepeatedLogout).toBe(1)
+    expect(rejectedRefresh.status).toBe(401)
+    expect(nextLogin.status).toBe(200)
+  })
+
+  it('handles missing and invalid refresh cookies without revoking another session', async () => {
+    const candidate = database.state.users[0]
+    const activeRefreshToken = {
+      id: database.state.nextRefreshId++, userId: candidate.id, tokenHash: 'unrelated-token-hash',
+      expiresAt: new Date(Date.now() + 60_000), revokedAt: null
+    }
+    database.state.refreshTokens.push(activeRefreshToken)
+
+    const missing = await request(app).post('/api/auth/logout')
+    const invalid = await request(app).post('/api/auth/logout').set('Cookie', 'job_connect_refresh=not-an-active-session')
+
+    expect(missing.status).toBe(200)
+    expect(invalid.status).toBe(200)
+    expect(activeRefreshToken.revokedAt).toBeNull()
+    expect(candidate.tokenVersion).toBe(0)
+  })
 
   it('updates only the authenticated account with safe public fields', async () => {
     const candidate = database.state.users[0]
@@ -223,6 +277,22 @@ describe('candidate profile resource ownership', () => {
 
     expect(response.status).toBe(404)
     expect(database.prisma.candidateEducation.update).not.toHaveBeenCalled()
+  })
+
+  it('does not reset omitted alert fields during a partial update', async () => {
+    const candidateUser = database.state.users[0]
+    database.prisma.candidate.findUnique.mockResolvedValue({ id: 101, userId: candidateUser.id })
+    database.prisma.jobAlert.findFirst.mockResolvedValue({ id: 71, candidateId: 101 })
+    database.prisma.jobAlert.update.mockResolvedValue({ id: 71, name: 'Cảnh báo mới' })
+
+    const response = await request(app).patch('/api/candidates/me/alerts/71')
+      .set('Authorization', `Bearer ${tokenFor(candidateUser)}`)
+      .send({ name: 'Cảnh báo mới' })
+
+    expect(response.status).toBe(200)
+    expect(database.prisma.jobAlert.update).toHaveBeenCalledWith({
+      where: { id: 71 }, data: { name: 'Cảnh báo mới' }
+    })
   })
 })
 
@@ -333,6 +403,50 @@ describe('RBAC integration', () => {
   })
 })
 
+describe('suspended recruiter company enforcement', () => {
+  it('re-evaluates company status for an existing recruiter session and restores access after reactivation', async () => {
+    const recruiter = database.state.users[1]
+    const accessToken = tokenFor(recruiter)
+    let companyStatus = 'ACTIVE'
+    database.prisma.recruiter.findUnique.mockImplementation(async () => ({
+      id: 60, userId: recruiter.id, companyId: 50, company: { status: companyStatus }
+    }))
+    database.prisma.job.findMany.mockResolvedValue([])
+    database.prisma.application.findMany.mockResolvedValue([])
+
+    const active = await request(app).get('/api/recruiters/stats').set('Authorization', `Bearer ${accessToken}`)
+    companyStatus = 'SUSPENDED'
+    const suspended = await request(app).get('/api/recruiters/stats').set('Authorization', `Bearer ${accessToken}`)
+    companyStatus = 'ACTIVE'
+    const restored = await request(app).get('/api/recruiters/stats').set('Authorization', `Bearer ${accessToken}`)
+
+    expect(active.status).toBe(200)
+    expect(suspended.status).toBe(403)
+    expect(restored.status).toBe(200)
+  })
+
+  it.each([
+    ['application management', 'get', '/api/applications/managed'],
+    ['candidate CV download', 'get', '/api/candidates/resumes/81/download'],
+    ['messaging', 'get', '/api/conversations'],
+    ['talent invitations', 'post', '/api/recruiters/talent/invite'],
+    ['interview management', 'get', '/api/interviews/recruiter'],
+    ['job creation', 'post', '/api/jobs'],
+    ['private notifications', 'get', '/api/notifications']
+  ])('blocks %s for a suspended company', async (_feature, method, path) => {
+    const recruiter = database.state.users[1]
+    database.prisma.recruiter.findUnique.mockResolvedValue({
+      id: 60, userId: recruiter.id, companyId: 50, company: { status: 'SUSPENDED' }
+    })
+
+    const response = await request(app)[method](path)
+      .set('Authorization', `Bearer ${tokenFor(recruiter)}`)
+      .send({})
+
+    expect(response.status).toBe(403)
+  })
+})
+
 describe('matching version gating', () => {
   it('returns 410 for a candidate before legacy V2 reads matching data', async () => {
     const candidate = database.state.users[0]
@@ -403,7 +517,7 @@ describe('V1 fallback and CV privacy', () => {
       mimeType: 'application/pdf',
       candidate: { id: 11, userId: owner.id }
     })
-    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 60, userId: recruiter.id, companyId: 30 })
+    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 60, userId: recruiter.id, companyId: 30, company: { status: 'ACTIVE' } })
     database.prisma.application.findFirst.mockResolvedValue(null)
 
     const [candidateResponse, recruiterResponse] = await Promise.all([
@@ -461,6 +575,43 @@ describe('public job and company detail regressions', () => {
 
     expect(response.status).toBe(404)
     expect(database.prisma.jobView.create).not.toHaveBeenCalled()
+  })
+
+  it('returns only candidate-facing screening question fields from the public endpoint', async () => {
+    database.prisma.job.findFirst.mockImplementation(async ({ select }) => {
+      expect(select.screeningQuestions.select).toEqual({
+        id: true, type: true, question: true, options: true, isRequired: true
+      })
+      expect(select.screeningQuestions.select).not.toHaveProperty('idealAnswer')
+      expect(select.screeningQuestions.select).not.toHaveProperty('isKnockout')
+      return {
+        screeningQuestions: [{ id: 9, type: 'TEXT', question: 'Kinh nghiệm?', options: null, isRequired: true }]
+      }
+    })
+
+    const response = await request(app).get('/api/jobs/21/screening-questions')
+
+    expect(response.status).toBe(200)
+    expect(response.body.data[0]).toEqual({ id: 9, type: 'TEXT', question: 'Kinh nghiệm?', options: null, isRequired: true })
+    expect(response.body.data[0]).not.toHaveProperty('idealAnswer')
+    expect(response.body.data[0]).not.toHaveProperty('isKnockout')
+  })
+
+  it('keeps internal screening answers available only in the owning recruiter job view', async () => {
+    const recruiter = database.state.users[1]
+    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 60, userId: recruiter.id, companyId: 31, company: { status: 'ACTIVE' } })
+    database.prisma.job.findMany.mockResolvedValue([{
+      id: 21,
+      companyId: 31,
+      screeningQuestions: [{ id: 9, idealAnswer: 'Có', isKnockout: true }],
+      _count: { applications: 0 }
+    }])
+
+    const response = await request(app).get('/api/jobs/me').set('Authorization', `Bearer ${tokenFor(recruiter)}`)
+
+    expect(response.status).toBe(200)
+    expect(database.prisma.job.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { companyId: 31 } }))
+    expect(response.body.data[0].screeningQuestions[0]).toMatchObject({ idealAnswer: 'Có', isKnockout: true })
   })
 
   it.each([
@@ -553,6 +704,48 @@ describe('public job and company detail regressions', () => {
 })
 
 describe('application and ownership workflows', () => {
+  it('does not expose internal screening answers or notes in a candidate application view', async () => {
+    const candidate = database.state.users[0]
+    database.prisma.application.findUnique.mockResolvedValue({
+      id: 41,
+      candidate: { id: 101, userId: candidate.id, user: { id: candidate.id, fullName: candidate.fullName } },
+      job: { id: 21, companyId: 31, company: { id: 31, name: 'QA Company' } },
+      notes: [{ id: 1, content: 'Internal note' }],
+      answers: [{
+        id: 5,
+        answer: 'Có',
+        question: { id: 9, type: 'YES_NO', question: 'Sẵn sàng?', options: null, isRequired: true, isKnockout: true, idealAnswer: 'Có' }
+      }]
+    })
+
+    const response = await request(app).get('/api/applications/41').set('Authorization', `Bearer ${tokenFor(candidate)}`)
+
+    expect(response.status).toBe(200)
+    expect(response.body.data).not.toHaveProperty('notes')
+    expect(response.body.data.answers[0].question).toEqual({
+      id: 9, type: 'YES_NO', question: 'Sẵn sàng?', options: null, isRequired: true
+    })
+    expect(response.body.data.answers[0].question).not.toHaveProperty('idealAnswer')
+    expect(response.body.data.answers[0].question).not.toHaveProperty('isKnockout')
+  })
+
+  it('keeps internal screening metadata in the owning recruiter application view', async () => {
+    const recruiter = database.state.users[1]
+    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 60, userId: recruiter.id, companyId: 31, company: { status: 'ACTIVE' } })
+    database.prisma.application.findUnique.mockResolvedValue({
+      id: 41,
+      candidate: { id: 101, userId: 1, user: { id: 1, fullName: 'Candidate' } },
+      job: { id: 21, companyId: 31, company: { id: 31, name: 'QA Company' } },
+      notes: [],
+      answers: [{ id: 5, answer: 'Có', question: { id: 9, isKnockout: true, idealAnswer: 'Có' } }]
+    })
+
+    const response = await request(app).get('/api/applications/41').set('Authorization', `Bearer ${tokenFor(recruiter)}`)
+
+    expect(response.status).toBe(200)
+    expect(response.body.data.answers[0].question).toMatchObject({ isKnockout: true, idealAnswer: 'Có' })
+  })
+
   it('creates a job with skills and screening questions in one transaction', async () => {
     const recruiterUser = database.state.users[1]
     database.prisma.recruiter.findUnique.mockResolvedValue({ id: 6, userId: recruiterUser.id, companyId: 100, company: { status: 'ACTIVE' } })
@@ -596,6 +789,23 @@ describe('application and ownership workflows', () => {
     }))
     expect(database.prisma.jobScreeningQuestion.deleteMany).toHaveBeenCalledWith({ where: { jobId: 22 } })
     expect(database.prisma.jobScreeningQuestion.createMany).toHaveBeenCalledOnce()
+  })
+
+  it('does not clear skills or screening questions when a recruiter patches only job text', async () => {
+    const recruiterUser = database.state.users[1]
+    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 6, userId: recruiterUser.id, companyId: 100, company: { status: 'ACTIVE' } })
+    database.prisma.job.findUnique.mockResolvedValue({ id: 22, companyId: 100, status: 'DRAFT' })
+    database.prisma.job.update.mockResolvedValue({ id: 22, companyId: 100, title: 'Updated title only', status: 'DRAFT', company: {}, skills: [] })
+
+    const response = await request(app).patch('/api/jobs/22')
+      .set('Authorization', `Bearer ${tokenFor(recruiterUser)}`)
+      .send({ title: 'Updated title only' })
+
+    expect(response.status).toBe(200)
+    expect(database.prisma.job.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: { title: 'Updated title only' }
+    }))
+    expect(database.prisma.jobScreeningQuestion.deleteMany).not.toHaveBeenCalled()
   })
 
   it('validates before write and propagates required-skill or question write failures', async () => {
@@ -692,7 +902,7 @@ describe('application and ownership workflows', () => {
       job: { id: 23, companyId: 100, title: 'Owned job' },
       candidate: { userId: 1, user: { id: 1, email: 'candidate@example.test' } }
     }
-    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 6, userId: recruiterUser.id, companyId: 100 })
+    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 6, userId: recruiterUser.id, companyId: 100, company: { status: 'ACTIVE' } })
     database.prisma.application.findUnique.mockResolvedValue(application)
     database.prisma.application.updateMany.mockResolvedValue({ count: 1 })
     database.prisma.applicationStatusHistory.create.mockResolvedValue({ id: 1 })
@@ -717,7 +927,7 @@ describe('application and ownership workflows', () => {
       job: { id: 23, companyId: 100, title: 'Concurrent job' },
       candidate: { userId: 1, user: { id: 1, email: 'candidate@example.test' } }
     }
-    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 6, userId: recruiterUser.id, companyId: 100 })
+    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 6, userId: recruiterUser.id, companyId: 100, company: { status: 'ACTIVE' } })
     database.prisma.application.findUnique.mockResolvedValue(application)
     database.prisma.application.updateMany.mockResolvedValue({ count: 0 })
 
@@ -759,7 +969,7 @@ describe('application and ownership workflows', () => {
       job: { id: 23, companyId: 100, title: 'Idempotent job' },
       candidate: { userId: 1, user: { id: 1, email: 'candidate@example.test' } }
     }
-    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 6, userId: recruiterUser.id, companyId: 100 })
+    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 6, userId: recruiterUser.id, companyId: 100, company: { status: 'ACTIVE' } })
     database.prisma.application.findUnique.mockResolvedValue(application)
 
     const response = await request(app).patch('/api/applications/45/status')
@@ -776,7 +986,7 @@ describe('application and ownership workflows', () => {
 
   it('blocks transitions from a terminal status', async () => {
     const recruiterUser = database.state.users[1]
-    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 6, userId: recruiterUser.id, companyId: 100 })
+    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 6, userId: recruiterUser.id, companyId: 100, company: { status: 'ACTIVE' } })
     database.prisma.application.findUnique.mockResolvedValue({
       id: 46,
       candidateId: 11,
@@ -797,7 +1007,7 @@ describe('application and ownership workflows', () => {
   it('keeps a committed status response successful when SMTP fails', async () => {
     const recruiterUser = database.state.users[1]
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 6, userId: recruiterUser.id, companyId: 100 })
+    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 6, userId: recruiterUser.id, companyId: 100, company: { status: 'ACTIVE' } })
     database.prisma.application.findUnique.mockResolvedValue({
       id: 47,
       candidateId: 11,
@@ -829,7 +1039,7 @@ describe('application and ownership workflows', () => {
       { id: 51, candidateId: 11, status: 'APPLIED', job: { id: 23, companyId: 100, title: 'Bulk job' }, candidate: { userId: 1 } },
       { id: 52, candidateId: 12, status: 'REJECTED', job: { id: 23, companyId: 100, title: 'Bulk job' }, candidate: { userId: 4 } }
     ]
-    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 6, userId: recruiterUser.id, companyId: 100 })
+    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 6, userId: recruiterUser.id, companyId: 100, company: { status: 'ACTIVE' } })
     database.prisma.application.findMany.mockResolvedValue(applications)
     database.prisma.application.updateMany.mockResolvedValue({ count: 1 })
     database.prisma.applicationStatusHistory.create.mockResolvedValue({ id: 1 })
@@ -848,7 +1058,7 @@ describe('application and ownership workflows', () => {
 
   it('returns 409 for a raced bulk reject before creating history or notifications', async () => {
     const recruiterUser = database.state.users[1]
-    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 6, userId: recruiterUser.id, companyId: 100 })
+    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 6, userId: recruiterUser.id, companyId: 100, company: { status: 'ACTIVE' } })
     database.prisma.application.findMany.mockResolvedValue([
       { id: 53, candidateId: 11, status: 'APPLIED', job: { id: 23, companyId: 100, title: 'Raced bulk job' }, candidate: { userId: 1 } }
     ])
@@ -936,7 +1146,7 @@ describe('admin moderation and conversations', () => {
 
   it('lets the owning recruiter open a conversation for an application', async () => {
     const recruiter = database.state.users[1]
-    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 6, userId: recruiter.id, companyId: 30 })
+    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 6, userId: recruiter.id, companyId: 30, company: { status: 'ACTIVE' } })
     database.prisma.application.findUnique.mockResolvedValue({ id: 45, job: { id: 25, companyId: 30 } })
     database.prisma.conversation.upsert.mockResolvedValue({ id: 72, applicationId: 45 })
 
@@ -1113,7 +1323,7 @@ describe('company logo storage integration', () => {
 
   it('removes the newly stored logo when the DB update fails', async () => {
     const recruiterUser = database.state.users[1]
-    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 12, userId: recruiterUser.id, companyId: 30 })
+    database.prisma.recruiter.findUnique.mockResolvedValue({ id: 12, userId: recruiterUser.id, companyId: 30, company: { status: 'ACTIVE' } })
     database.prisma.company.findUnique.mockResolvedValue({ logoUrl: null })
     database.prisma.company.update.mockRejectedValue(new Error('database unavailable'))
     const before = fs.readdirSync(path.join(uploadDirectory, 'logos')).length

@@ -1,13 +1,13 @@
 const prisma = require('../config/prisma');
 const ApiError = require('../utils/apiError');
 const asyncHandler = require('../utils/asyncHandler');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorize, requireActiveRecruiterCompany } = require('../middleware/auth');
 const validate = require('../middleware/validate');
 const { calculateMatchScore } = require('../services/matching.service');
 const { z } = require('zod');
 
 const router = require('express').Router();
-router.use(authenticate, authorize('RECRUITER'));
+router.use(authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany);
 
 router.get('/stats', asyncHandler(async (req, res) => {
   const recruiter = await prisma.recruiter.findUnique({ where: { userId: req.user.id } });

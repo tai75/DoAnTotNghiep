@@ -7,7 +7,7 @@ const prisma = require('../config/prisma');
 const ApiError = require('../utils/apiError');
 const asyncHandler = require('../utils/asyncHandler');
 const validate = require('../middleware/validate');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorize, requireActiveRecruiterCompany } = require('../middleware/auth');
 const mammoth = require('mammoth');
 const pdfParse = require('pdf-parse');
 const { extractResumeProfile, resumeImportSchema, analyzeResumeForJob } = require('../services/llm.service');
@@ -40,9 +40,9 @@ const alertFields = {
   location: z.string().max(150).nullable().optional(),
   employmentType: z.enum(['FULL_TIME', 'PART_TIME', 'INTERNSHIP', 'CONTRACT', 'REMOTE', 'HYBRID']).nullable().optional(),
   minSalary: z.number().nonnegative().nullable().optional(),
-  skillIds: z.array(z.number().int().positive()).max(100).default([]),
-  frequency: z.enum(['INSTANT', 'DAILY', 'WEEKLY']).default('DAILY'),
-  isActive: z.boolean().default(true)
+  skillIds: z.array(z.number().int().positive()).max(100).optional(),
+  frequency: z.enum(['INSTANT', 'DAILY', 'WEEKLY']).optional(),
+  isActive: z.boolean().optional()
 };
 const alertSchema = z.object({
   body: z.object(alertFields),
@@ -132,7 +132,15 @@ router.post('/me/alerts', authenticate, authorize('CANDIDATE'), validate(alertSc
   const candidate = await findCandidate(req.user.id);
   const count = await prisma.jobAlert.count({ where: { candidateId: candidate.id } });
   if (count >= 20) throw new ApiError(400, 'Mỗi ứng viên chỉ được tạo tối đa 20 thông báo');
-  const alert = await prisma.jobAlert.create({ data: { ...req.body, candidateId: candidate.id, skillIds: req.body.skillIds } });
+  const alert = await prisma.jobAlert.create({
+    data: {
+      ...req.body,
+      candidateId: candidate.id,
+      skillIds: req.body.skillIds || [],
+      frequency: req.body.frequency || 'DAILY',
+      isActive: req.body.isActive ?? true
+    }
+  });
   res.status(201).json({ success: true, data: alert });
 }));
 
@@ -284,7 +292,7 @@ const experienceSchema = z.object({
     description: z.string().max(10000).nullable().optional(),
     fromDate: dateField,
     toDate: dateField,
-    isCurrent: z.boolean().default(false)
+    isCurrent: z.boolean().optional()
   }),
   params: z.object({}),
   query: z.object({})
@@ -294,7 +302,7 @@ const projectSchema = z.object({
     name: z.string().min(1).max(180),
     description: z.string().max(10000).nullable().optional(),
     link: httpUrl.nullable().optional(),
-    technologies: z.array(z.string().max(100)).max(50).default([])
+    technologies: z.array(z.string().max(100)).max(50).optional()
   }),
   params: z.object({}),
   query: z.object({})
@@ -369,7 +377,7 @@ router.get('/skills', asyncHandler(async (req, res) => {
   res.json({ success: true, data: skills });
 }));
 
-router.get('/resumes/:id/download', authenticate, validate(resourceIdSchema), asyncHandler(async (req, res) => {
+router.get('/resumes/:id/download', authenticate, requireActiveRecruiterCompany, validate(resourceIdSchema), asyncHandler(async (req, res) => {
   const resume = await prisma.candidateResume.findUnique({
     where: { id: req.params.id },
     include: { candidate: true }
@@ -397,7 +405,7 @@ router.get('/resumes/:id/download', authenticate, validate(resourceIdSchema), as
   res.sendFile(entry.path);
 }));
 
-router.get('/', authenticate, authorize('RECRUITER'), validate(candidateSearchSchema), asyncHandler(async (req, res) => {
+router.get('/', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, validate(candidateSearchSchema), asyncHandler(async (req, res) => {
   const { search, location, desiredPosition, page, limit } = req.query;
   const where = {
     isSearchable: true,
@@ -549,14 +557,17 @@ function registerCandidateResource(path, model, schema) {
   }));
   router.post(`/me/${path}`, authenticate, authorize('CANDIDATE'), validate(schema), asyncHandler(async (req, res) => {
     const candidate = await findCandidate(req.user.id);
+    const resourceData = { ...req.body, candidateId: candidate.id };
+    if (model === 'candidateExperience' && resourceData.isCurrent === undefined) resourceData.isCurrent = false;
+    if (model === 'candidateProject' && resourceData.technologies === undefined) resourceData.technologies = [];
     const item = model === 'candidateResume'
       ? await prisma.$transaction(async (transaction) => {
         if (req.body.isDefault) {
           await transaction.candidateResume.updateMany({ where: { candidateId: candidate.id }, data: { isDefault: false } });
         }
-        return transaction.candidateResume.create({ data: { ...req.body, candidateId: candidate.id } });
+        return transaction.candidateResume.create({ data: resourceData });
       })
-      : await prisma[model].create({ data: { ...req.body, candidateId: candidate.id } });
+      : await prisma[model].create({ data: resourceData });
     res.status(201).json({ success: true, data: item });
   }));
   router.patch(`/me/${path}/:id`, authenticate, authorize('CANDIDATE'), validate(updateSchema), asyncHandler(async (req, res) => {

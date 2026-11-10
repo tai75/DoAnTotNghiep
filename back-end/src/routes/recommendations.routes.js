@@ -2,7 +2,7 @@ const { z } = require('zod');
 const prisma = require('../config/prisma');
 const ApiError = require('../utils/apiError');
 const asyncHandler = require('../utils/asyncHandler');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorize, requireActiveRecruiterCompany } = require('../middleware/auth');
 const { calculateMatchScore, buildRuleExplanation } = require('../services/matching.service');
 const { explainMatch, chat } = require('../services/llm.service');
 const validate = require('../middleware/validate');
@@ -76,7 +76,7 @@ router.get('/jobs', authenticate, authorize('CANDIDATE'), aiRateLimit, validate(
   res.json({ success: true, data: scored.slice(0, limit) });
 }));
 
-router.get('/jobs/:jobId/candidates', authenticate, authorize('RECRUITER'), aiRateLimit, validate(recruiterListSchema), asyncHandler(async (req, res) => {
+router.get('/jobs/:jobId/candidates', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, aiRateLimit, validate(recruiterListSchema), asyncHandler(async (req, res) => {
   const jobId = req.params.jobId;
   const filters = req.query;
   const recruiter = await prisma.recruiter.findUnique({ where: { userId: req.user.id } });
@@ -101,7 +101,7 @@ router.get('/jobs/:jobId/candidates', authenticate, authorize('RECRUITER'), aiRa
   res.json({ success: true, data: { job, items: results.slice(0, filters.limit) } });
 }));
 
-router.post('/chat', authenticate, authorize('CANDIDATE', 'RECRUITER'), aiRateLimit, validate(chatSchema), asyncHandler(async (req, res) => {
+router.post('/chat', authenticate, authorize('CANDIDATE', 'RECRUITER'), requireActiveRecruiterCompany, aiRateLimit, validate(chatSchema), asyncHandler(async (req, res) => {
   const { message } = req.body;
   const candidate = req.user.role === 'CANDIDATE' ? await getCandidate(req.user.id) : null;
   const recruiter = req.user.role === 'RECRUITER' ? await prisma.recruiter.findUnique({ where: { userId: req.user.id } }) : null;
