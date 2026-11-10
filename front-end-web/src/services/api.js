@@ -222,11 +222,23 @@ export const adminApi = {
     return { stats, jobs, users }
   },
   user: (id) => apiRequest(`/admin/users/${id}`),
+  users: (params = {}) => apiRequest(`/admin/users?${new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== '')))}`),
   auditLogs: (params = {}) => apiRequest(`/admin/audit-logs?${new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, value]) => value)))}`),
-  moderateJob: (id, status, note) => apiRequest(`/admin/jobs/${id}/moderation`, { method: 'PATCH', body: JSON.stringify({ status, note: note || undefined }) }),
+  jobs: (params = {}) => apiRequest(`/admin/jobs?${new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== '')))}`),
+  moderateJob: (id, status, note, expectedUpdatedAt) => apiRequest(`/admin/jobs/${id}/moderation`, { method: 'PATCH', body: JSON.stringify({ status, note: note || undefined, expectedUpdatedAt }) }),
+  companies: (params = {}) => apiRequest(`/admin/companies?${new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== '')))}`),
+  company: (id) => apiRequest(`/admin/companies/${id}`),
+  updateCompanyStatus: (id, status, reason, expectedUpdatedAt) => apiRequest(`/admin/companies/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, reason: reason || undefined, expectedUpdatedAt }) }),
+  reports: (params = {}) => apiRequest(`/admin/reports?${new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== '')))}`),
+  report: (id) => apiRequest(`/admin/reports/${id}`),
+  updateReportStatus: (id, status, note, expectedUpdatedAt) => apiRequest(`/admin/reports/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, note: note || undefined, expectedUpdatedAt }) }),
   reviews: (status = 'PENDING') => apiRequest(`/admin/reviews?status=${status}`),
   moderateReview: (id, status, note) => apiRequest(`/admin/reviews/${id}/moderation`, { method: 'PATCH', body: JSON.stringify({ status, note }) }),
   updateUserStatus: (id, status) => apiRequest(`/admin/users/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) })
+}
+
+export const reportsApi = {
+  create: (payload) => apiRequest('/reports', { method: 'POST', body: JSON.stringify(payload) })
 }
 
 export const recruiterApi = {

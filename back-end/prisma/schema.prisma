@@ -57,6 +57,31 @@ enum UserStatus {
   BANNED
 }
 
+enum CompanyStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum ReportTargetType {
+  JOB
+  COMPANY
+}
+
+enum ReportReason {
+  SPAM
+  MISLEADING
+  DISCRIMINATION
+  FRAUD
+  OTHER
+}
+
+enum ReportStatus {
+  PENDING
+  REVIEWING
+  RESOLVED
+  REJECTED
+}
+
 enum JobStatus {
   DRAFT
   PENDING
@@ -143,6 +168,8 @@ model User {
   talentInvitationsSent TalentInvitation[]     @relation("TalentInvitationRecruiter")
   companyReviews        CompanyReview[]
   interviewActions      Interview[]            @relation("InterviewRecruiter")
+  reportsSubmitted      Report[]               @relation("ReportSubmitter")
+  reportsResolved       Report[]               @relation("ReportResolver")
 
   @@map("users")
 }
@@ -191,13 +218,18 @@ model Company {
   address       String?         @db.VarChar(255)
   employeeCount Int?            @map("employee_count")
   industry      String?         @db.VarChar(150)
+  status        CompanyStatus   @default(ACTIVE)
+  statusReason  String?         @map("status_reason") @db.Text
+  statusChangedAt DateTime?     @map("status_changed_at")
   createdAt     DateTime        @default(now()) @map("created_at")
   updatedAt     DateTime        @updatedAt @map("updated_at")
   recruiters    Recruiter[]
   jobs          Job[]
   followers     CompanyFollow[]
   reviews       CompanyReview[]
+  reports       Report[]
 
+  @@index([status, createdAt])
   @@map("companies")
 }
 
@@ -260,6 +292,7 @@ model Job {
   views                   JobView[]
   talentInvitations       TalentInvitation[]
   alertEventJobs          JobAlertEventJob[]
+  reports                 Report[]
 
   @@index([status])
   @@index([createdAt])
@@ -267,6 +300,31 @@ model Job {
   @@index([deadline])
   @@index([employmentType])
   @@map("jobs")
+}
+
+model Report {
+  id               Int              @id @default(autoincrement())
+  reporterUserId   Int              @map("reporter_user_id")
+  resolvedByUserId Int?             @map("resolved_by_user_id")
+  targetType       ReportTargetType @map("target_type")
+  jobId            Int?             @map("job_id")
+  companyId        Int?             @map("company_id")
+  reason           ReportReason
+  description      String?          @db.Text
+  status           ReportStatus     @default(PENDING)
+  resolutionNote   String?          @map("resolution_note") @db.Text
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+  resolvedAt       DateTime?        @map("resolved_at")
+  reporter         User             @relation("ReportSubmitter", fields: [reporterUserId], references: [id], onDelete: Cascade)
+  resolvedBy       User?            @relation("ReportResolver", fields: [resolvedByUserId], references: [id], onDelete: SetNull)
+  job              Job?             @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  company          Company?         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([targetType, jobId, companyId])
+  @@index([reporterUserId, createdAt])
+  @@map("reports")
 }
 
 model JobSkill {

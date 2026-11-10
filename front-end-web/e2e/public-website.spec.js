@@ -34,6 +34,7 @@ test.describe('Website công khai', () => {
     await expect(page).toHaveURL(/location=H%C3%A0\+N%E1%BB%99i/)
     await page.getByLabel('Từ khóa').fill('Engineer')
     await page.getByRole('button', { name: 'Áp dụng' }).click()
+    await expect(page).toHaveURL(/search=Engineer/)
     await page.goBack()
     await expect(page.getByLabel('Từ khóa')).toHaveValue('Developer')
   })

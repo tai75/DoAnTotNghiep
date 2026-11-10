@@ -4,6 +4,7 @@ import { applicationsApi, candidateApi, jobsApi } from '../services/api'
 import { useAuth } from '../context/auth'
 import AppShell from '../components/AppShell'
 import PublicFooter from '../components/PublicFooter'
+import ReportModal from '../components/ReportModal'
 import { Badge, EmptyState, Modal, Skeleton } from '../components/ui'
 import useDocumentMeta from '../hooks/useDocumentMeta'
 import '../board.css'
@@ -178,6 +179,8 @@ function ApplyWizard({ job, resumes, setResumes, onSubmit, onClose }) {
 
 function JobDetail({ job, session, saved, onSave, onApply, returnTo, resumes, setResumes, similarJobs = job?._similarJobs || [] }) {
   const [applyOpen, setApplyOpen] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
+  const [reportMessage, setReportMessage] = useState('')
   if (!job) return <div className="public-detail-loading"><Skeleton height={28} width="70%" /><Skeleton height={18} /><Skeleton height={180} /></div>
   if (job._loading) return <div className="public-detail-loading"><Skeleton height={80} /><Skeleton height={28} /><Skeleton height={180} /></div>
   if (job._unavailable) return <EmptyState title="Việc làm không khả dụng" description="Tin tuyển dụng không tồn tại, đã đóng hoặc đã hết hạn." action={<Link className="secondary-button" to="/jobs">Quay lại danh sách</Link>} />
@@ -190,7 +193,8 @@ function JobDetail({ job, session, saved, onSave, onApply, returnTo, resumes, se
       {logoUrl(job.company) ? <img className="public-company-logo large" src={logoUrl(job.company)} alt={`Logo ${job.company?.name || 'doanh nghiệp'}`} /> : <div className="public-company-logo large" aria-hidden="true">{job.company?.name?.charAt(0) || 'J'}</div>}
       <div><span className="job-age">{relativeDate(job.createdAt)}</span><h1>{job.title}</h1><Link className="public-company-link" to={`/companies/${job.company?.id}`}>{job.company?.name}</Link></div>
     </div>
-    <div className="public-detail-actions"><button className={`public-save-button ${saved ? 'saved' : ''}`} onClick={() => onSave(job)}>{saved ? '★ Đã lưu' : '☆ Lưu'}</button>{session ? <button className="primary-button" onClick={startApply}>Ứng tuyển</button> : <LoginAction returnTo={returnTo}>Đăng nhập để ứng tuyển</LoginAction>}</div>
+    <div className="public-detail-actions"><button className={`public-save-button ${saved ? 'saved' : ''}`} onClick={() => onSave(job)}>{saved ? '★ Đã lưu' : '☆ Lưu'}</button>{session ? <button className="primary-button" onClick={startApply}>Ứng tuyển</button> : <LoginAction returnTo={returnTo}>Đăng nhập để ứng tuyển</LoginAction>}{['CANDIDATE', 'RECRUITER'].includes(session?.user?.role) && <button type="button" className="ghost-button" onClick={() => setReportOpen(true)}>Báo cáo</button>}</div>
+    {reportMessage && <p className="board-message" role="status">{reportMessage}</p>}
     <div className="public-detail-facts"><span>⌖ {job.location || 'Toàn quốc'}</span><span>◷ {employmentLabels[job.employmentType] || 'Linh hoạt'}</span><span>₫ {formatSalary(job)}</span><span>👥 {job.applicantCount ?? 0} ứng viên</span>{job.deadline && <span>Hạn nộp: {new Date(job.deadline).toLocaleDateString('vi-VN')}</span>}</div>
     <MatchPanel job={job} session={session} returnTo={returnTo} />
     <div className="public-detail-copy">
@@ -199,6 +203,7 @@ function JobDetail({ job, session, saved, onSave, onApply, returnTo, resumes, se
       {job.requiredYearsExperience !== null && job.requiredYearsExperience !== undefined && <><h2>Kinh nghiệm</h2><p>Tối thiểu {job.requiredYearsExperience} năm kinh nghiệm.</p></>}
       {similarJobs.length > 0 && <section className="similar-jobs" aria-labelledby="similar-jobs-title"><h2 id="similar-jobs-title">Việc làm tương tự</h2>{similarJobs.map((item) => <Link key={item.id} to={`/jobs/${item.id}${returnTo.includes('?') ? returnTo.slice(returnTo.indexOf('?')) : ''}`}><strong>{item.title}</strong><span>{item.company?.name} · {item.location || 'Toàn quốc'}</span></Link>)}</section>}
       {session && applyOpen && <ApplyWizard job={job} resumes={resumes} setResumes={setResumes} onSubmit={(payload) => onApply(job, payload).then(() => setApplyOpen(false))} onClose={() => setApplyOpen(false)} />}
+      <ReportModal open={reportOpen} onClose={() => setReportOpen(false)} targetType="JOB" targetId={job.id} targetName={job.title} onSuccess={setReportMessage} />
     </div>
   </article>
 }

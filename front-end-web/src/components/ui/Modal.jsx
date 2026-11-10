@@ -11,6 +11,19 @@ export default function Modal({ open, title, onClose, children }) {
     window.requestAnimationFrame(() => dialogRef.current?.focus())
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') onClose()
+      if (event.key === 'Tab' && dialogRef.current) {
+        const focusable = [...dialogRef.current.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+        if (!focusable.length) return event.preventDefault()
+        const first = focusable[0]
+        const last = focusable[focusable.length - 1]
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault()
+          last.focus()
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault()
+          first.focus()
+        }
+      }
     }
     document.addEventListener('keydown', handleKeyDown)
     return () => {

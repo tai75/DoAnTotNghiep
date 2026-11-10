@@ -41,14 +41,14 @@ async function assertQaTarget(prisma) {
 async function assertQaDatabase(prisma) {
   const identity = await assertQaTarget(prisma);
   const migrations = migrationInventory();
-  if (migrations.length !== 18) throw new Error(`QA-01 safety stop: expected 18 migration files, found ${migrations.length}.`);
+  if (migrations.length !== 19) throw new Error(`QA-01 safety stop: expected 19 migration files, found ${migrations.length}.`);
   const history = await prisma.$queryRawUnsafe('SELECT migration_name migrationName, checksum, finished_at finishedAt, rolled_back_at rolledBackAt FROM _prisma_migrations ORDER BY started_at');
   const byName = new Map(history.map((row) => [row.migrationName, row]));
   const invalid = migrations.filter((migration) => {
     const row = byName.get(migration.name);
     return !row || row.checksum !== migration.checksum || !row.finishedAt || row.rolledBackAt;
   });
-  if (history.length !== 18 || invalid.length) throw new Error(`QA-01 safety stop: migration history is not canonical (${history.length}/18, invalid=${invalid.map((item) => item.name).join(',') || 'none'}).`);
+  if (history.length !== 19 || invalid.length) throw new Error(`QA-01 safety stop: migration history is not canonical (${history.length}/19, invalid=${invalid.map((item) => item.name).join(',') || 'none'}).`);
   return identity;
 }
 
@@ -128,6 +128,10 @@ async function main() {
   const url = qaUrl();
   const prisma = new PrismaClient({ datasourceUrl: url.toString() });
   try {
+    if (command === 'identity') {
+      console.log(JSON.stringify({ status: 'PASS', command, identity: await assertQaTarget(prisma) }, null, 2));
+      return;
+    }
     const identity = await assertQaDatabase(prisma);
     if (command === 'reset-seed') {
       const clearedTables = await resetBusinessData(prisma);

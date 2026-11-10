@@ -82,6 +82,7 @@ router.get('/', validate(listSchema), asyncHandler(async (req, res) => {
   const { search, industry, page, limit } = req.query;
   const activeJobs = { status: 'PUBLISHED', OR: [{ deadline: { gte: new Date() } }, { deadline: null }] };
   const where = {
+    status: 'ACTIVE',
     jobs: { some: activeJobs },
     ...(search ? { OR: [{ name: { contains: search } }, { industry: { contains: search } }, { address: { contains: search } }] } : {}),
     ...(industry ? { industry: { equals: industry } } : {})
@@ -100,7 +101,7 @@ router.get('/', validate(listSchema), asyncHandler(async (req, res) => {
     }),
     prisma.company.count({ where }),
     prisma.company.findMany({
-      where: { jobs: { some: activeJobs }, industry: { not: null } },
+      where: { status: 'ACTIVE', jobs: { some: activeJobs }, industry: { not: null } },
       distinct: ['industry'],
       select: { industry: true },
       orderBy: { industry: 'asc' }
@@ -118,7 +119,7 @@ router.get('/', validate(listSchema), asyncHandler(async (req, res) => {
 
 router.post('/:id/follow', authenticate, authorize('CANDIDATE'), validate(idSchema), asyncHandler(async (req, res) => {
   const candidate = await prisma.candidate.findUnique({ where: { userId: req.user.id } });
-  const company = await prisma.company.findUnique({ where: { id: req.params.id } });
+  const company = await prisma.company.findFirst({ where: { id: req.params.id, status: 'ACTIVE' } });
   if (!candidate || !company) return res.status(404).json({ success: false, message: 'Không tìm thấy công ty' });
   const follow = await prisma.companyFollow.upsert({ where: { candidateId_companyId: { candidateId: candidate.id, companyId: company.id } }, create: { candidateId: candidate.id, companyId: company.id }, update: {} });
   res.json({ success: true, data: { following: true, follow } });
@@ -138,7 +139,7 @@ router.get('/:id/following', authenticate, authorize('CANDIDATE'), validate(idSc
 
 router.post('/:id/reviews', authenticate, authorize('CANDIDATE'), validate(reviewSchema), asyncHandler(async (req, res) => {
   const body = req.body;
-  const company = await prisma.company.findUnique({ where: { id: req.params.id } });
+  const company = await prisma.company.findFirst({ where: { id: req.params.id, status: 'ACTIVE' } });
   if (!company) throw new ApiError(404, 'Không tìm thấy công ty');
   try {
     const review = await prisma.companyReview.create({ data: { ...body, companyId: company.id, userId: req.user.id } });
@@ -151,8 +152,8 @@ router.post('/:id/reviews', authenticate, authorize('CANDIDATE'), validate(revie
 }));
 
 router.get('/:id', validate(idSchema), asyncHandler(async (req, res) => {
-  const company = await prisma.company.findUnique({
-    where: { id: req.params.id },
+  const company = await prisma.company.findFirst({
+    where: { id: req.params.id, status: 'ACTIVE' },
     include: {
       jobs: {
         where: { status: 'PUBLISHED', OR: [{ deadline: { gte: new Date() } }, { deadline: null }] },
@@ -175,8 +176,9 @@ router.get('/:id', validate(idSchema), asyncHandler(async (req, res) => {
 }));
 
 router.patch('/me', authenticate, authorize('RECRUITER'), validate(updateSchema), asyncHandler(async (req, res) => {
-  const recruiter = await prisma.recruiter.findUnique({ where: { userId: req.user.id } });
+  const recruiter = await prisma.recruiter.findUnique({ where: { userId: req.user.id }, include: { company: { select: { status: true } } } });
   if (!recruiter) return res.status(403).json({ success: false, message: 'Tài khoản chưa được liên kết với nhà tuyển dụng' });
+  if (recruiter.company.status !== 'ACTIVE') throw new ApiError(403, 'Doanh nghiệp đang bị đình chỉ, không thể cập nhật hồ sơ');
   const company = await prisma.company.update({ where: { id: recruiter.companyId }, data: req.body });
   res.json({ success: true, data: company });
 }));
@@ -191,8 +193,9 @@ router.post('/me/logo', authenticate, authorize('RECRUITER'), (req, res, next) =
   try {
     if (!req.file) throw new ApiError(400, 'Vui lòng chọn logo');
     if (!hasValidLogoSignature(req.file.buffer, req.file.mimetype)) throw new ApiError(400, 'Nội dung logo không đúng định dạng');
-    const recruiter = await prisma.recruiter.findUnique({ where: { userId: req.user.id } });
+    const recruiter = await prisma.recruiter.findUnique({ where: { userId: req.user.id }, include: { company: { select: { status: true } } } });
     if (!recruiter) throw new ApiError(403, 'Tài khoản chưa được liên kết với nhà tuyển dụng');
+    if (recruiter.company.status !== 'ACTIVE') throw new ApiError(403, 'Doanh nghiệp đang bị đình chỉ, không thể cập nhật biểu trưng');
     const currentCompany = await prisma.company.findUnique({ where: { id: recruiter.companyId }, select: { logoUrl: true } });
     newKey = storage.createKey(req.file.mimetype === 'image/png' ? '.png' : '.jpg');
     await storage.put(storage.namespaces.logos, newKey, req.file.buffer);

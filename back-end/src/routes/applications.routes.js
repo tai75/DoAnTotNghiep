@@ -116,7 +116,7 @@ router.post('/jobs/:jobId', authenticate, authorize('CANDIDATE'), validate(apply
   const candidate = await prisma.candidate.findUnique({ where: { userId: req.user.id }, include: { skills: { include: { skill: true } } } });
   if (!candidate) throw new ApiError(404, 'Không tìm thấy hồ sơ ứng viên');
   const job = await prisma.job.findFirst({
-    where: { id: req.params.jobId, status: 'PUBLISHED', OR: [{ deadline: { gte: new Date() } }, { deadline: null }] },
+    where: { id: req.params.jobId, status: 'PUBLISHED', company: { status: 'ACTIVE' }, OR: [{ deadline: { gte: new Date() } }, { deadline: null }] },
     include: { skills: { include: { skill: true } }, screeningQuestions: { orderBy: { id: 'asc' } } }
   });
   if (!job) throw new ApiError(404, 'Việc làm không tồn tại hoặc đã hết hạn');

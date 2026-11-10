@@ -32,8 +32,9 @@ const userStatusSchema = z.object({
 const moderationSchema = z.object({
   body: z.object({
     status: z.enum(['PUBLISHED', 'REJECTED']),
-    note: z.string().max(2000).optional()
-  }),
+    note: z.string().trim().max(2000).optional(),
+    expectedUpdatedAt: z.coerce.date()
+  }).refine(({ status, note }) => status !== 'REJECTED' || Boolean(note), { path: ['note'], message: 'Vui lòng nhập lý do từ chối' }),
   params: z.object({ id: z.coerce.number().int().positive() }),
   query: z.object({})
 });
@@ -60,8 +61,49 @@ const jobListSchema = z.object({
     search: z.string().optional(),
     status: z.enum(['DRAFT', 'PENDING', 'PUBLISHED', 'CLOSED', 'REJECTED']).optional(),
     page: z.coerce.number().int().positive().default(1),
+    limit: z.coerce.number().int().min(1).max(50).default(20),
+    sort: z.enum(['updated_desc', 'updated_asc', 'created_desc']).default('updated_desc')
+  })
+});
+
+const companyListSchema = z.object({
+  body: z.object({}), params: z.object({}),
+  query: z.object({
+    search: z.string().trim().max(180).optional(),
+    status: z.enum(['ACTIVE', 'SUSPENDED']).optional(),
+    sort: z.enum(['newest', 'oldest', 'name_asc', 'name_desc']).default('newest'),
+    page: z.coerce.number().int().positive().default(1),
     limit: z.coerce.number().int().min(1).max(50).default(20)
   })
+});
+
+const companyStatusSchema = z.object({
+  body: z.object({
+    status: z.enum(['ACTIVE', 'SUSPENDED']),
+    reason: z.string().trim().max(2000).optional(),
+    expectedUpdatedAt: z.coerce.date()
+  }).refine(({ status, reason }) => status !== 'SUSPENDED' || Boolean(reason), { path: ['reason'], message: 'Vui lòng nhập lý do đình chỉ' }),
+  params: z.object({ id: z.coerce.number().int().positive() }), query: z.object({})
+});
+
+const reportListSchema = z.object({
+  body: z.object({}), params: z.object({}),
+  query: z.object({
+    search: z.string().trim().max(180).optional(),
+    status: z.enum(['PENDING', 'REVIEWING', 'RESOLVED', 'REJECTED']).optional(),
+    targetType: z.enum(['JOB', 'COMPANY']).optional(),
+    page: z.coerce.number().int().positive().default(1),
+    limit: z.coerce.number().int().min(1).max(50).default(20)
+  })
+});
+
+const reportStatusSchema = z.object({
+  body: z.object({
+    status: z.enum(['REVIEWING', 'RESOLVED', 'REJECTED']),
+    note: z.string().trim().max(2000).optional(),
+    expectedUpdatedAt: z.coerce.date()
+  }).refine(({ status, note }) => status === 'REVIEWING' || Boolean(note), { path: ['note'], message: 'Vui lòng nhập ghi chú xử lý' }),
+  params: z.object({ id: z.coerce.number().int().positive() }), query: z.object({})
 });
 
 const statsSchema = z.object({
@@ -196,14 +238,15 @@ router.patch('/users/:id/status', validate(userStatusSchema), asyncHandler(async
   res.json({ success: true, data: updated });
 }));
 
-router.get('/companies', validate(listSchema), asyncHandler(async (req, res) => {
-  const { search, page, limit } = req.query;
-  const where = search ? { name: { contains: search } } : {};
+router.get('/companies', validate(companyListSchema), asyncHandler(async (req, res) => {
+  const { search, status, sort, page, limit } = req.query;
+  const where = { ...(search ? { name: { contains: search } } : {}), ...(status ? { status } : {}) };
+  const orderBy = sort === 'oldest' ? { createdAt: 'asc' } : sort === 'name_asc' ? { name: 'asc' } : sort === 'name_desc' ? { name: 'desc' } : { createdAt: 'desc' };
   const [items, total] = await prisma.$transaction([
     prisma.company.findMany({
       where,
-      include: { _count: { select: { recruiters: true, jobs: true } } },
-      orderBy: { createdAt: 'desc' },
+      select: { id: true, name: true, logoUrl: true, address: true, industry: true, status: true, statusReason: true, statusChangedAt: true, createdAt: true, updatedAt: true, _count: { select: { recruiters: true, jobs: true } } },
+      orderBy,
       skip: (page - 1) * limit,
       take: limit
     }),
@@ -212,8 +255,44 @@ router.get('/companies', validate(listSchema), asyncHandler(async (req, res) => 
   res.json({ success: true, data: { items, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } } });
 }));
 
+router.get('/companies/:id', validate(idSchema), asyncHandler(async (req, res) => {
+  const company = await prisma.company.findUnique({
+    where: { id: req.params.id },
+    select: {
+      id: true, name: true, description: true, website: true, logoUrl: true, address: true, employeeCount: true, industry: true,
+      status: true, statusReason: true, statusChangedAt: true, createdAt: true, updatedAt: true,
+      recruiters: { select: { id: true, jobTitle: true, user: { select: { id: true, fullName: true, email: true, status: true, createdAt: true } } } },
+      jobs: { select: { id: true, title: true, status: true, createdAt: true, updatedAt: true, _count: { select: { applications: true } } }, orderBy: { updatedAt: 'desc' }, take: 50 },
+      _count: { select: { recruiters: true, jobs: true, reports: true } }
+    }
+  });
+  if (!company) throw new ApiError(404, 'Không tìm thấy doanh nghiệp');
+  const history = await prisma.auditLog.findMany({ where: { entity: 'Company', entityId: company.id }, select: { id: true, action: true, metadata: true, createdAt: true, user: { select: { id: true, fullName: true } } }, orderBy: { createdAt: 'desc' }, take: 50 });
+  res.json({ success: true, data: { ...company, history } });
+}));
+
+router.patch('/companies/:id/status', validate(companyStatusSchema), asyncHandler(async (req, res) => {
+  const { status, reason, expectedUpdatedAt } = req.body;
+  const company = await prisma.company.findUnique({ where: { id: req.params.id } });
+  if (!company) throw new ApiError(404, 'Không tìm thấy doanh nghiệp');
+  const normalizedReason = status === 'SUSPENDED' ? reason : null;
+  if (company.status === status && (company.statusReason || null) === normalizedReason) {
+    return res.json({ success: true, data: company, meta: { idempotent: true } });
+  }
+  const updated = await prisma.$transaction(async (transaction) => {
+    const changed = await transaction.company.updateMany({ where: { id: company.id, updatedAt: expectedUpdatedAt }, data: { status, statusReason: normalizedReason, statusChangedAt: new Date() } });
+    if (changed.count !== 1) throw new ApiError(409, 'Doanh nghiệp đã được quản trị viên khác cập nhật, vui lòng tải lại');
+    const result = await transaction.company.findUnique({ where: { id: company.id } });
+    await transaction.auditLog.create({ data: { userId: req.user.id, action: 'COMPANY_STATUS_UPDATED', entity: 'Company', entityId: company.id, metadata: { fromStatus: company.status, toStatus: status, reason: normalizedReason } } });
+    const recruiters = await transaction.recruiter.findMany({ where: { companyId: company.id }, select: { userId: true } });
+    if (recruiters.length) await transaction.notification.createMany({ data: recruiters.map(({ userId }) => ({ userId, type: 'COMPANY_STATUS', title: status === 'SUSPENDED' ? 'Doanh nghiệp đã bị đình chỉ' : 'Doanh nghiệp đã được khôi phục', content: status === 'SUSPENDED' ? `Doanh nghiệp ${company.name} đã bị đình chỉ. Lý do: ${normalizedReason}` : `Doanh nghiệp ${company.name} đã được phép hoạt động trở lại.`, link: '/recruiter?section=company' })) });
+    return result;
+  });
+  res.json({ success: true, data: updated });
+}));
+
 router.get('/jobs', validate(jobListSchema), asyncHandler(async (req, res) => {
-  const { search, status, page, limit } = req.query;
+  const { search, status, sort, page, limit } = req.query;
   const where = {
     ...(status ? { status } : {}),
     ...(search ? { OR: [{ title: { contains: search } }, { company: { name: { contains: search } } }] } : {})
@@ -221,8 +300,8 @@ router.get('/jobs', validate(jobListSchema), asyncHandler(async (req, res) => {
   const [items, total] = await prisma.$transaction([
     prisma.job.findMany({
       where,
-      include: { company: true, _count: { select: { applications: true } } },
-      orderBy: { updatedAt: 'desc' },
+      select: { id: true, title: true, description: true, location: true, employmentType: true, minSalary: true, maxSalary: true, status: true, moderationNote: true, deadline: true, createdAt: true, updatedAt: true, company: { select: { id: true, name: true, status: true } }, skills: { select: { isRequired: true, skill: { select: { id: true, name: true } } } }, _count: { select: { applications: true } } },
+      orderBy: sort === 'updated_asc' ? { updatedAt: 'asc' } : sort === 'created_desc' ? { createdAt: 'desc' } : { updatedAt: 'desc' },
       skip: (page - 1) * limit,
       take: limit
     }),
@@ -232,32 +311,76 @@ router.get('/jobs', validate(jobListSchema), asyncHandler(async (req, res) => {
 }));
 
 router.patch('/jobs/:id/moderation', validate(moderationSchema), asyncHandler(async (req, res) => {
-  const job = await prisma.job.findUnique({ where: { id: req.params.id } });
+  const { status, note, expectedUpdatedAt } = req.body;
+  const job = await prisma.job.findUnique({ where: { id: req.params.id }, include: { company: { select: { id: true, name: true, status: true } } } });
   if (!job) throw new ApiError(404, 'Không tìm thấy tin tuyển dụng');
-  if (!['PENDING', 'PUBLISHED', 'REJECTED'].includes(job.status)) {
-    throw new ApiError(400, 'Tin tuyển dụng không ở trạng thái có thể kiểm duyệt');
-  }
+  const normalizedNote = note || null;
+  if (job.status === status && (job.moderationNote || null) === normalizedNote) return res.json({ success: true, data: job, meta: { idempotent: true } });
+  if (job.status !== 'PENDING') throw new ApiError(409, 'Tin tuyển dụng đã được xử lý, vui lòng tải lại');
+  if (status === 'PUBLISHED' && job.company.status !== 'ACTIVE') throw new ApiError(409, 'Không thể duyệt tin của doanh nghiệp đang bị đình chỉ');
   const updated = await prisma.$transaction(async (transaction) => {
-    const result = await transaction.job.update({ where: { id: job.id }, data: { status: req.body.status, moderationNote: req.body.note || null }, include: { company: true } });
+    const changed = await transaction.job.updateMany({ where: { id: job.id, status: 'PENDING', updatedAt: expectedUpdatedAt }, data: { status, moderationNote: normalizedNote } });
+    if (changed.count !== 1) throw new ApiError(409, 'Tin tuyển dụng đã được quản trị viên khác xử lý, vui lòng tải lại');
+    const result = await transaction.job.findUnique({ where: { id: job.id }, include: { company: true } });
     const recruiters = await transaction.recruiter.findMany({ where: { companyId: job.companyId }, select: { userId: true } });
     if (recruiters.length) {
       await transaction.notification.createMany({
         data: recruiters.map(({ userId }) => ({
           userId,
           type: 'JOB_MODERATION',
-          title: req.body.status === 'PUBLISHED' ? 'Tin tuyển dụng đã được duyệt' : 'Tin tuyển dụng bị từ chối',
-          content: `Tin "${job.title}" ${req.body.status === 'PUBLISHED' ? 'đã được đăng' : 'bị từ chối'} bởi quản trị viên.`,
+          title: status === 'PUBLISHED' ? 'Tin tuyển dụng đã được duyệt' : 'Tin tuyển dụng bị từ chối',
+          content: `Tin "${job.title}" ${status === 'PUBLISHED' ? 'đã được đăng' : 'bị từ chối'} bởi quản trị viên.`,
           link: `/recruiter?section=jobs&jobId=${job.id}`
         }))
       });
     }
-    if (req.body.status === 'PUBLISHED' && job.status !== 'PUBLISHED') {
+    if (status === 'PUBLISHED') {
       const followers = await transaction.companyFollow.findMany({ where: { companyId: job.companyId }, select: { candidate: { select: { userId: true } } } });
       if (followers.length) await transaction.notification.createMany({ data: followers.map(({ candidate }) => ({ userId: candidate.userId, type: 'NEW_COMPANY_JOB', title: 'Công ty bạn theo dõi có việc mới', content: `${job.title} đang tuyển dụng tại công ty bạn theo dõi.`, link: `/jobs/${job.id}` })) });
     }
     await transaction.auditLog.create({
-      data: { userId: req.user.id, action: 'JOB_MODERATION_UPDATED', entity: 'Job', entityId: job.id, metadata: { fromStatus: job.status, toStatus: req.body.status, note: req.body.note || null } }
+      data: { userId: req.user.id, action: 'JOB_MODERATION_UPDATED', entity: 'Job', entityId: job.id, metadata: { fromStatus: job.status, toStatus: status, note: normalizedNote } }
     });
+    return result;
+  });
+  res.json({ success: true, data: updated });
+}));
+
+router.get('/reports', validate(reportListSchema), asyncHandler(async (req, res) => {
+  const { search, status, targetType, page, limit } = req.query;
+  const where = {
+    ...(status ? { status } : {}),
+    ...(targetType ? { targetType } : {}),
+    ...(search ? { OR: [{ description: { contains: search } }, { job: { title: { contains: search } } }, { company: { name: { contains: search } } }] } : {})
+  };
+  const [items, total] = await prisma.$transaction([
+    prisma.report.findMany({ where, select: { id: true, targetType: true, reason: true, description: true, status: true, resolutionNote: true, createdAt: true, updatedAt: true, resolvedAt: true, reporter: { select: { id: true, fullName: true, email: true, role: true } }, resolvedBy: { select: { id: true, fullName: true } }, job: { select: { id: true, title: true, status: true, company: { select: { id: true, name: true } } } }, company: { select: { id: true, name: true, status: true } } }, orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: limit }),
+    prisma.report.count({ where })
+  ]);
+  res.json({ success: true, data: { items, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } } });
+}));
+
+router.get('/reports/:id', validate(idSchema), asyncHandler(async (req, res) => {
+  const report = await prisma.report.findUnique({ where: { id: req.params.id }, select: { id: true, targetType: true, reason: true, description: true, status: true, resolutionNote: true, createdAt: true, updatedAt: true, resolvedAt: true, reporter: { select: { id: true, fullName: true, email: true, role: true, status: true } }, resolvedBy: { select: { id: true, fullName: true } }, job: { select: { id: true, title: true, description: true, status: true, updatedAt: true, company: { select: { id: true, name: true, status: true } } } }, company: { select: { id: true, name: true, description: true, status: true, updatedAt: true } } } });
+  if (!report) throw new ApiError(404, 'Không tìm thấy báo cáo');
+  const history = await prisma.auditLog.findMany({ where: { entity: 'Report', entityId: report.id }, select: { id: true, action: true, metadata: true, createdAt: true, user: { select: { id: true, fullName: true } } }, orderBy: { createdAt: 'desc' } });
+  res.json({ success: true, data: { ...report, history } });
+}));
+
+router.patch('/reports/:id/status', validate(reportStatusSchema), asyncHandler(async (req, res) => {
+  const { status, note, expectedUpdatedAt } = req.body;
+  const report = await prisma.report.findUnique({ where: { id: req.params.id } });
+  if (!report) throw new ApiError(404, 'Không tìm thấy báo cáo');
+  const normalizedNote = note || null;
+  if (report.status === status && (report.resolutionNote || null) === normalizedNote) return res.json({ success: true, data: report, meta: { idempotent: true } });
+  const allowed = report.status === 'PENDING' ? ['REVIEWING', 'RESOLVED', 'REJECTED'] : report.status === 'REVIEWING' ? ['RESOLVED', 'REJECTED'] : [];
+  if (!allowed.includes(status)) throw new ApiError(409, 'Báo cáo không thể chuyển sang trạng thái này');
+  const updated = await prisma.$transaction(async (transaction) => {
+    const changed = await transaction.report.updateMany({ where: { id: report.id, status: report.status, updatedAt: expectedUpdatedAt }, data: { status, resolutionNote: normalizedNote, resolvedByUserId: req.user.id, resolvedAt: ['RESOLVED', 'REJECTED'].includes(status) ? new Date() : null } });
+    if (changed.count !== 1) throw new ApiError(409, 'Báo cáo đã được quản trị viên khác xử lý, vui lòng tải lại');
+    const result = await transaction.report.findUnique({ where: { id: report.id } });
+    await transaction.auditLog.create({ data: { userId: req.user.id, action: 'REPORT_STATUS_UPDATED', entity: 'Report', entityId: report.id, metadata: { fromStatus: report.status, toStatus: status, note: normalizedNote } } });
+    await transaction.notification.create({ data: { userId: report.reporterUserId, type: 'REPORT_STATUS', title: 'Báo cáo vi phạm đã được cập nhật', content: status === 'REVIEWING' ? 'Báo cáo của bạn đang được quản trị viên xem xét.' : status === 'RESOLVED' ? 'Báo cáo của bạn đã được giải quyết.' : 'Báo cáo của bạn đã bị từ chối.', link: null } });
     return result;
   });
   res.json({ success: true, data: updated });

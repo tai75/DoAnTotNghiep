@@ -10,7 +10,7 @@ const chromePath = process.env.PLAYWRIGHT_CHROME_PATH || 'C:\\Program Files\\Goo
 
 export default defineConfig({
   testDir: './e2e',
-  testMatch: ['public-website.spec.js', 'qa01-authenticated.spec.js', 'auth-recovery.spec.js'],
+  testMatch: ['public-website.spec.js', 'qa01-authenticated.spec.js', 'auth-recovery.spec.js', 'admin-management.spec.js'],
   fullyParallel: false,
   workers: 1,
   timeout: 120_000,

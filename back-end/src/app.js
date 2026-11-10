@@ -22,6 +22,7 @@ const recommendationsRoutes = require('./routes/recommendations.routes');
 const conversationsRoutes = require('./routes/conversations.routes');
 const storageRoutes = require('./routes/storage.routes');
 const interviewsRoutes = require('./routes/interviews.routes');
+const reportsRoutes = require('./routes/reports.routes');
 
 const app = express();
 
@@ -86,6 +87,7 @@ app.use('/api/recommendations', recommendationsRoutes);
 app.use('/api/ai', recommendationsRoutes);
 app.use('/api/conversations', conversationsRoutes);
 app.use('/api/interviews', interviewsRoutes);
+app.use('/api/reports', reportsRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

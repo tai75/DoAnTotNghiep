@@ -1,84 +1,102 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { adminApi } from '../services/api'
-import { useAuth } from '../context/auth'
 import AppShell from '../components/AppShell'
-import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { EmptyState, Modal, Skeleton, Toast } from '../components/ui'
+import { useAuth } from '../context/auth'
+import { adminApi } from '../services/api'
 
-const roleLabels = { CANDIDATE: 'Ứng viên', RECRUITER: 'Nhà tuyển dụng', ADMIN: 'Quản trị viên' }
-const userStatusLabels = { ACTIVE: 'Đang hoạt động', BANNED: 'Đã khóa' }
-const auditEntityLabels = { User: 'Tài khoản', Job: 'Việc làm', Application: 'Đơn ứng tuyển', CompanyReview: 'Đánh giá doanh nghiệp' }
-const auditActionLabels = { CREATE: 'Tạo mới', UPDATE: 'Cập nhật', DELETE: 'Xóa', MODERATE: 'Kiểm duyệt', STATUS_CHANGE: 'Đổi trạng thái', LOGIN: 'Đăng nhập', LOGOUT: 'Đăng xuất' }
+const sections = [['overview', 'Tổng quan'], ['jobs', 'Tin tuyển dụng'], ['companies', 'Doanh nghiệp'], ['reports', 'Báo cáo vi phạm'], ['users', 'Tài khoản'], ['reviews', 'Đánh giá'], ['audit', 'Nhật ký kiểm toán']]
+const labels = { ACTIVE: 'Đang hoạt động', INACTIVE: 'Chưa kích hoạt', BANNED: 'Đã khóa', SUSPENDED: 'Đã đình chỉ', DRAFT: 'Bản nháp', PENDING: 'Chờ xử lý', PUBLISHED: 'Đã đăng', CLOSED: 'Đã đóng', REJECTED: 'Đã từ chối', REVIEWING: 'Đang xem xét', RESOLVED: 'Đã giải quyết', APPROVED: 'Đã duyệt', CANDIDATE: 'Ứng viên', RECRUITER: 'Nhà tuyển dụng', ADMIN: 'Quản trị viên', JOB: 'Tin tuyển dụng', COMPANY: 'Doanh nghiệp', SPAM: 'Nội dung rác', MISLEADING: 'Thông tin sai lệch', DISCRIMINATION: 'Phân biệt đối xử', FRAUD: 'Dấu hiệu lừa đảo', OTHER: 'Lý do khác' }
+const actionLabels = { CREATE: 'Tạo mới', UPDATE: 'Cập nhật', DELETE: 'Xóa', USER_STATUS_UPDATED: 'Đổi trạng thái tài khoản', JOB_MODERATION_UPDATED: 'Kiểm duyệt tin tuyển dụng', COMPANY_STATUS_UPDATED: 'Đổi trạng thái doanh nghiệp', REPORT_STATUS_UPDATED: 'Xử lý báo cáo', COMPANY_REVIEW_MODERATION_UPDATED: 'Kiểm duyệt đánh giá' }
+const entityLabels = { User: 'Tài khoản', Job: 'Tin tuyển dụng', Company: 'Doanh nghiệp', Report: 'Báo cáo', CompanyReview: 'Đánh giá' }
+const fmt = (value) => value ? new Date(value).toLocaleString('vi-VN') : 'Chưa cập nhật'
+const emptyFilters = () => ({ search: '', status: '', role: '', targetType: '', entity: '', page: 1, limit: 20 })
 
-function JobTable({ jobs, onModerate }) {
-  if (!jobs.length) return <div className="empty-state">Hiện không có tin tuyển dụng chờ duyệt.</div>
-  return <div className="data-table-wrap"><table className="data-table"><thead><tr><th>Vị trí tuyển dụng</th><th>Công ty</th><th>Ngày cập nhật</th><th>Thao tác</th></tr></thead><tbody>{jobs.map((job) => <tr key={job.id}><td><strong>{job.title}</strong><small>{job.location || 'Chưa cập nhật địa điểm'}</small></td><td>{job.company?.name || 'Chưa cập nhật'}</td><td>{new Date(job.updatedAt).toLocaleDateString('vi-VN')}</td><td><div className="table-actions"><button className="approve-button" onClick={() => onModerate(job.id, 'PUBLISHED')}>Duyệt</button><button className="reject-button" onClick={() => onModerate(job.id, 'REJECTED')}>Từ chối</button></div></td></tr>)}</tbody></table></div>
-}
-
-function UserTable({ users, onToggle }) {
-  if (!users.length) return <div className="empty-state">Chưa có tài khoản nào.</div>
-  return <div className="data-table-wrap"><table className="data-table"><thead><tr><th>Tài khoản</th><th>Vai trò</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>{users.map((item) => <tr key={item.id}><td><button className="table-link" onClick={() => item.onView(item.id)}><strong>{item.fullName}</strong><small>{item.email}</small></button></td><td><span className="role-label">{item.role === 'RECRUITER' ? 'Nhà tuyển dụng' : item.role === 'CANDIDATE' ? 'Ứng viên' : 'Quản trị viên'}</span></td><td><span className={`status-pill ${item.status.toLowerCase()}`}>{item.status === 'ACTIVE' ? 'Đang hoạt động' : 'Đã khóa'}</span></td><td>{item.role !== 'ADMIN' && <button className="table-link" onClick={() => onToggle(item)}>{item.status === 'ACTIVE' ? 'Khóa' : 'Mở khóa'}</button>}</td></tr>)}</tbody></table></div>
-}
+function Badge({ status }) { return <span className={`status-pill ${String(status).toLowerCase()}`}>{labels[status] || status}</span> }
+function Table({ headings, children }) { return <div className="data-table-wrap"><table className="data-table"><thead><tr>{headings.map((item) => <th key={item}>{item}</th>)}</tr></thead><tbody>{children}</tbody></table></div> }
+function Pager({ value, onPage }) { return value?.totalPages > 1 && <nav className="admin-pagination" aria-label="Phân trang"><button disabled={value.page <= 1} onClick={() => onPage(value.page - 1)}>Trang trước</button><span>Trang {value.page}/{value.totalPages} · {value.total} kết quả</span><button disabled={value.page >= value.totalPages} onClick={() => onPage(value.page + 1)}>Trang sau</button></nav> }
 
 export default function AdminDashboardPage() {
   const { session, logout } = useAuth()
-  const [searchParams] = useSearchParams()
-  const requestedSection = searchParams.get('section')
-  const [activeSection, setActiveSection] = useState(() => ['overview', 'jobs', 'users', 'reviews', 'audit'].includes(requestedSection) ? requestedSection : 'overview')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requested = searchParams.get('section')
+  const [section, setSection] = useState(sections.some(([key]) => key === requested) ? requested : 'overview')
+  const [data, setData] = useState({ items: [], pagination: null })
   const [stats, setStats] = useState(null)
-  const [jobs, setJobs] = useState([])
-  const [users, setUsers] = useState([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [filters, setFilters] = useState({ groupBy: 'day' })
-  const [selectedUser, setSelectedUser] = useState(null)
-  const [auditLogs, setAuditLogs] = useState([])
-  const [auditFilter, setAuditFilter] = useState('')
-  const [reviews, setReviews] = useState([])
+  const [filters, setFilters] = useState(emptyFilters)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [detail, setDetail] = useState(null)
+  const [action, setAction] = useState(null)
+  const [note, setNote] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [toast, setToast] = useState(null)
 
-  const viewUser = useCallback(async (id) => {
-    try { const user = await adminApi.user(id); setSelectedUser({ ...user, role: roleLabels[user.role] || 'Tài khoản', status: userStatusLabels[user.status] || 'Không xác định' }) } catch (actionError) { setError(actionError.message) }
-  }, [])
-
-  const loadAuditLogs = useCallback(async () => {
+  const load = useCallback(async () => {
+    setLoading(true); setError('')
     try {
-      const data = await adminApi.auditLogs(auditFilter ? { entity: auditFilter } : {})
-      setAuditLogs(data.items.map((log) => ({ ...log, action: auditActionLabels[log.action] || 'Hoạt động hệ thống', entity: auditEntityLabels[log.entity] || 'Đối tượng hệ thống' })))
-    } catch (actionError) { setError(actionError.message) }
-  }, [auditFilter])
+      const query = Object.fromEntries(Object.entries(filters).filter(([, value]) => value !== ''))
+      if (section === 'overview') { const result = await adminApi.dashboard({ groupBy: 'day' }); setStats(result.stats); setData(result.jobs) }
+      else if (section === 'jobs') setData(await adminApi.jobs(query))
+      else if (section === 'companies') setData(await adminApi.companies(query))
+      else if (section === 'reports') setData(await adminApi.reports(query))
+      else if (section === 'users') setData(await adminApi.users(query))
+      else if (section === 'reviews') setData({ items: await adminApi.reviews(filters.status || 'PENDING'), pagination: null })
+      else setData(await adminApi.auditLogs(query))
+    } catch (requestError) { setError(requestError.message) } finally { setLoading(false) }
+  }, [section, filters])
+  useEffect(() => { load() }, [load])
 
-  const loadDashboard = useCallback(async () => {
-    setIsLoading(true)
+  function changeSection(next) { setSection(next); setSearchParams({ section: next }); setFilters(emptyFilters()); setDetail(null) }
+  async function openDetail(item) {
+    try { setDetail(section === 'companies' ? await adminApi.company(item.id) : section === 'reports' ? await adminApi.report(item.id) : section === 'users' ? await adminApi.user(item.id) : item) }
+    catch (requestError) { setError(requestError.message) }
+  }
+  function prepare(kind, item, targetStatus) { setAction({ kind, item, targetStatus }); setNote('') }
+  async function confirmAction(event) {
+    event.preventDefault(); setSaving(true)
     try {
-      const data = await adminApi.dashboard(filters)
-      setStats(data.stats)
-      setJobs(data.jobs.items || data.jobs)
-      setUsers((data.users.items || data.users).map((user) => ({ ...user, onView: viewUser })))
-      setError(null)
-    } catch (actionError) {
-      setError(actionError.message)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [filters, viewUser])
-
-  useEffect(() => { loadDashboard() }, [loadDashboard])
-  useEffect(() => { if (activeSection === 'audit') loadAuditLogs() }, [activeSection, loadAuditLogs])
-  useEffect(() => { if (activeSection === 'reviews') adminApi.reviews().then(setReviews).catch((actionError) => setError(actionError.message)) }, [activeSection])
-  async function moderateReview(id, status) {
-    const note = status === 'REJECTED' ? window.prompt('Nhập lý do từ chối:') : ''
-    if (status === 'REJECTED' && note === null) return
-    try { await adminApi.moderateReview(id, status, note); setReviews((current) => current.filter((review) => review.id !== id)) } catch (actionError) { setError(actionError.message) }
+      if (action.kind === 'job') await adminApi.moderateJob(action.item.id, action.targetStatus, note, action.item.updatedAt)
+      if (action.kind === 'company') await adminApi.updateCompanyStatus(action.item.id, action.targetStatus, note, action.item.updatedAt)
+      if (action.kind === 'report') await adminApi.updateReportStatus(action.item.id, action.targetStatus, note, action.item.updatedAt)
+      if (action.kind === 'user') await adminApi.updateUserStatus(action.item.id, action.targetStatus)
+      if (action.kind === 'review') await adminApi.moderateReview(action.item.id, action.targetStatus, note)
+      setAction(null); setDetail(null); setToast({ type: 'success', message: 'Thao tác đã được ghi nhận.' }); await load()
+    } catch (requestError) { setError(requestError.message); if (requestError.status === 409) await load() } finally { setSaving(false) }
   }
-  async function moderateJob(id, status) {
-    const note = status === 'REJECTED' ? window.prompt('Nhập lý do từ chối tin tuyển dụng:') : ''
-    if (status === 'REJECTED' && note === null) return
-    try { await adminApi.moderateJob(id, status, note); setJobs((current) => current.filter((job) => job.id !== id)) } catch (actionError) { setError(actionError.message) }
-  }
-  async function toggleUserStatus(item) { try { const updated = await adminApi.updateUserStatus(item.id, item.status === 'ACTIVE' ? 'BANNED' : 'ACTIVE'); setUsers((current) => current.map((user) => user.id === updated.id ? { ...user, status: updated.status } : user)) } catch (actionError) { setError(actionError.message) } }
-  const statCards = stats ? [{ label: 'Tổng tài khoản', value: stats.users, note: `${stats.candidates} ứng viên` }, { label: 'Nhà tuyển dụng', value: stats.recruiters, note: `${stats.companies} công ty` }, { label: 'Tin tuyển dụng', value: stats.jobs, note: `${stats.pendingJobs} tin chờ duyệt` }, { label: 'Lượt ứng tuyển', value: stats.applications, note: 'Toàn hệ thống' }] : []
 
-  const chartData = (stats?.series || []).map((item) => ({ period: item.period, users: Object.values(item.users).reduce((sum, value) => sum + value, 0), jobs: Object.values(item.jobs).reduce((sum, value) => sum + value, 0), applications: Object.values(item.applications).reduce((sum, value) => sum + value, 0) }))
-  const statusData = [{ name: 'Việc làm', value: stats?.jobs || 0 }, { name: 'Ứng tuyển', value: stats?.applications || 0 }, { name: 'Tài khoản', value: stats?.users || 0 }]
-  return <AppShell user={session.user} logout={logout}><main className="admin-shell"><aside className="admin-sidebar"><div className="admin-brand"><span className="admin-brand-mark">JC</span><span>Job Connect</span></div><div className="admin-profile"><div className="avatar">{session.user.fullName?.charAt(0) || 'A'}</div><div><strong>{session.user.fullName}</strong><small>Quản trị viên</small></div></div><nav className="admin-nav" aria-label="Điều hướng quản trị"><button className={activeSection === 'overview' ? 'active' : ''} onClick={() => setActiveSection('overview')}><span>□</span>Tổng quan</button><button className={activeSection === 'jobs' ? 'active' : ''} onClick={() => setActiveSection('jobs')}><span>▤</span>Kiểm duyệt tin</button><button className={activeSection === 'users' ? 'active' : ''} onClick={() => setActiveSection('users')}><span>◌</span>Tài khoản</button>  <button className={activeSection === 'reviews' ? 'active' : ''} onClick={() => setActiveSection('reviews')}><span>★</span>Kiểm duyệt đánh giá</button><button className={activeSection === 'audit' ? 'active' : ''} onClick={() => setActiveSection('audit')}><span>◉</span>Nhật ký kiểm toán</button></nav><button className="logout-button" onClick={logout}>Đăng xuất <span>↗</span></button></aside><section className="admin-main"><header className="admin-header"><div><p className="eyebrow">TRUNG TÂM ĐIỀU HÀNH</p>  <h1>{activeSection === 'overview' ? 'Tổng quan hệ thống' : activeSection === 'jobs' ? 'Kiểm duyệt tin tuyển dụng' : activeSection === 'reviews' ? 'Kiểm duyệt đánh giá' : activeSection === 'audit' ? 'Nhật ký kiểm toán' : 'Quản lý tài khoản'}</h1></div><button className="refresh-button" onClick={loadDashboard}>↻ <span>Làm mới</span></button></header>{error && <div className="admin-alert">{error}</div>}{activeSection === 'overview' && <section className="admin-section"><div className="section-heading"><h2>Khoảng thời gian thống kê</h2><select value={filters.groupBy} onChange={(event) => setFilters({ groupBy: event.target.value })}><option value="day">Theo ngày</option><option value="month">Theo tháng</option><option value="year">Theo năm</option></select></div><div style={{ width: '100%', height: 280 }}><ResponsiveContainer><LineChart data={chartData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="period" /><YAxis allowDecimals={false} /><Tooltip /><Line type="monotone" dataKey="users" name="Tài khoản" stroke="#2563eb" /><Line type="monotone" dataKey="jobs" name="Việc làm" stroke="#16a34a" /><Line type="monotone" dataKey="applications" name="Ứng tuyển" stroke="#f97316" /></LineChart></ResponsiveContainer></div><div style={{ display: 'flex', gap: 24, height: 240 }}><ResponsiveContainer><BarChart data={chartData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="period" /><YAxis allowDecimals={false} /><Tooltip /><Bar dataKey="users" fill="#2563eb" /><Bar dataKey="jobs" fill="#16a34a" /><Bar dataKey="applications" fill="#f97316" /></BarChart></ResponsiveContainer><ResponsiveContainer><PieChart><Pie data={statusData} dataKey="value" nameKey="name" outerRadius={80} label>{statusData.map((item, index) => <Cell key={item.name} fill={['#2563eb', '#16a34a', '#f97316'][index]} />)}</Pie><Tooltip /></PieChart></ResponsiveContainer></div></section>}{isLoading ? <div className="admin-loading">Đang tải dữ liệu...</div> : <>{(activeSection === 'overview' || activeSection === 'jobs') && <div className="stat-grid">{statCards.map((card) => <article className="stat-card" key={card.label}><span>{card.label}</span><strong>{card.value}</strong><small>{card.note}</small></article>)}</div>  }{activeSection === 'reviews' ? <section className="admin-section"><div className="section-heading"><h2>Đánh giá chờ kiểm duyệt</h2></div><div className="data-table-wrap"><table className="data-table"><thead><tr><th>Công ty</th><th>Đánh giá</th><th>Tác giả</th><th>Thao tác</th></tr></thead><tbody>{reviews.map((review) => <tr key={review.id}><td>{review.company.name}</td><td><strong>{'★'.repeat(review.rating)} {review.title}</strong><small>{review.pros}</small></td><td>{review.author ? review.author.fullName : 'Ẩn danh'}</td><td><button className="approve-button" onClick={() => moderateReview(review.id, 'APPROVED')}>Duyệt</button><button className="reject-button" onClick={() => moderateReview(review.id, 'REJECTED')}>Từ chối</button></td></tr>)}</tbody></table></div></section> : activeSection === 'audit' ? <section className="admin-section"><div className="section-heading"><h2>Nhật ký hệ thống</h2><select value={auditFilter} onChange={(event) => setAuditFilter(event.target.value)}><option value="">Tất cả đối tượng</option><option value="User">Tài khoản</option><option value="Job">Việc làm</option><option value="Application">Đơn ứng tuyển</option></select></div><div className="data-table-wrap"><table className="data-table"><thead><tr><th>Thời gian</th><th>Người thực hiện</th><th>Hành động</th><th>Đối tượng</th></tr></thead><tbody>{auditLogs.map((log) => <tr key={log.id}><td>{new Date(log.createdAt).toLocaleString('vi-VN')}</td><td>{log.user?.fullName || 'Hệ thống'}</td><td>{log.action}</td><td>{log.entity} #{log.entityId}</td></tr>)}</tbody></table></div></section> : <>{activeSection !== 'users' && <section className="admin-section"><div className="section-heading"><div><p className="eyebrow">CẦN XỬ LÝ</p><h2>Tin đang chờ duyệt</h2></div><button className="view-link" onClick={() => setActiveSection('jobs')}>Xem tất cả →</button></div><JobTable jobs={jobs} onModerate={moderateJob} /></section>}{activeSection !== 'jobs' && <section className="admin-section"><div className="section-heading"><div><p className="eyebrow">THÀNH VIÊN MỚI</p><h2>Tài khoản gần đây</h2></div><button className="view-link" onClick={() => setActiveSection('users')}>Quản lý →</button></div><UserTable users={users} onToggle={toggleUserStatus} /></section>}</>}</>}{selectedUser && <section className="admin-section"><div className="section-heading"><h2>Chi tiết: {selectedUser.fullName}</h2><button className="view-link" onClick={() => setSelectedUser(null)}>Đóng</button></div><p>{selectedUser.email} · {selectedUser.role} · {selectedUser.status}</p>{selectedUser.candidate && <p>{selectedUser.candidate.headline || 'Chưa có tiêu đề hồ sơ'} · {selectedUser.candidate.location || 'Chưa cập nhật địa điểm'}</p>}</section>}</section></main></AppShell>
+  const statusOptions = section === 'jobs' ? [['', 'Tất cả trạng thái'], ['PENDING', 'Chờ duyệt'], ['PUBLISHED', 'Đã đăng'], ['REJECTED', 'Đã từ chối'], ['CLOSED', 'Đã đóng'], ['DRAFT', 'Bản nháp']] : section === 'companies' ? [['', 'Tất cả trạng thái'], ['ACTIVE', 'Đang hoạt động'], ['SUSPENDED', 'Đã đình chỉ']] : section === 'reports' ? [['', 'Tất cả trạng thái'], ['PENDING', 'Chờ xử lý'], ['REVIEWING', 'Đang xem xét'], ['RESOLVED', 'Đã giải quyết'], ['REJECTED', 'Đã từ chối']] : section === 'users' ? [['', 'Tất cả trạng thái'], ['ACTIVE', 'Đang hoạt động'], ['BANNED', 'Đã khóa']] : null
+  const title = sections.find(([key]) => key === section)?.[1]
+  const statCards = stats ? [['Tổng tài khoản', stats.users], ['Ứng viên', stats.candidates], ['Nhà tuyển dụng', stats.recruiters], ['Doanh nghiệp', stats.companies], ['Tin tuyển dụng', stats.jobs], ['Lượt ứng tuyển', stats.applications], ['Tin chờ duyệt', stats.pendingJobs]] : []
+
+  return <AppShell user={session.user} logout={logout}><main className="admin-shell"><aside className="admin-sidebar"><div className="admin-brand"><span className="admin-brand-mark">JC</span><span>Job Connect</span></div><div className="admin-profile"><div className="avatar">{session.user.fullName?.charAt(0) || 'A'}</div><div><strong>{session.user.fullName}</strong><small>Quản trị viên</small></div></div><nav className="admin-nav" aria-label="Điều hướng quản trị">{sections.map(([key, label]) => <button key={key} className={section === key ? 'active' : ''} aria-current={section === key ? 'page' : undefined} onClick={() => changeSection(key)}>{label}</button>)}</nav><button className="logout-button" onClick={logout}>Đăng xuất</button></aside>
+    <section className="admin-main"><header className="admin-header"><div><p className="eyebrow">TRUNG TÂM ĐIỀU HÀNH</p><h1>{title}</h1></div><button className="refresh-button" onClick={load}>↻ <span>Làm mới</span></button></header>{error && <div className="admin-alert" role="alert">{error} <button className="table-link" onClick={load}>Thử lại</button></div>}
+      {section === 'overview' && <div className="stat-grid">{statCards.map(([label, value]) => <article className="stat-card" key={label}><span>{label}</span><strong>{value}</strong><small>Dữ liệu hệ thống hiện tại</small></article>)}</div>}
+      {section !== 'overview' && section !== 'reviews' && <form className="admin-filters" onSubmit={(event) => { event.preventDefault(); setFilters({ ...filters, page: 1 }) }}>{section !== 'audit' && <label>Tìm kiếm<input value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} placeholder="Nhập từ khóa" /></label>}{statusOptions && <label>Trạng thái<select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}>{statusOptions.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>}{section === 'users' && <label>Vai trò<select value={filters.role} onChange={(event) => setFilters({ ...filters, role: event.target.value })}><option value="">Tất cả vai trò</option><option value="CANDIDATE">Ứng viên</option><option value="RECRUITER">Nhà tuyển dụng</option><option value="ADMIN">Quản trị viên</option></select></label>}{section === 'reports' && <label>Đối tượng<select value={filters.targetType} onChange={(event) => setFilters({ ...filters, targetType: event.target.value })}><option value="">Tất cả đối tượng</option><option value="JOB">Tin tuyển dụng</option><option value="COMPANY">Doanh nghiệp</option></select></label>}{section === 'audit' && <label>Đối tượng<select value={filters.entity} onChange={(event) => setFilters({ ...filters, entity: event.target.value })}><option value="">Tất cả đối tượng</option><option value="User">Tài khoản</option><option value="Job">Tin tuyển dụng</option><option value="Company">Doanh nghiệp</option><option value="Report">Báo cáo</option></select></label>}<button className="primary-button">Áp dụng</button><button type="button" className="ghost-button" onClick={() => setFilters(emptyFilters())}>Đặt lại</button></form>}
+      {loading ? <div className="admin-skeletons"><Skeleton height={80} /><Skeleton height={80} /><Skeleton height={80} /></div> : <AdminTable section={section} items={data.items || []} onDetail={openDetail} onAction={prepare} />}
+      <Pager value={data.pagination} onPage={(page) => setFilters({ ...filters, page })} />
+    </section><DetailModal section={section} detail={detail} onClose={() => setDetail(null)} onAction={prepare} /><ActionModal action={action} note={note} setNote={setNote} saving={saving} onClose={() => setAction(null)} onSubmit={confirmAction} /><Toast message={toast?.message} type={toast?.type} onClose={() => setToast(null)} /></main></AppShell>
+}
+
+function AdminTable({ section, items, onDetail, onAction }) {
+  if (!items.length) return <EmptyState title="Chưa có dữ liệu" description="Không có kết quả phù hợp với bộ lọc hiện tại." />
+  if (section === 'jobs' || section === 'overview') return <Table headings={['Tin tuyển dụng', 'Doanh nghiệp', 'Trạng thái', 'Cập nhật', 'Thao tác']}>{items.map((item) => <tr key={item.id}><td><button className="table-link" onClick={() => onDetail(item)}>{item.title}</button><small>{item.location || 'Chưa cập nhật địa điểm'}</small></td><td>{item.company?.name}</td><td><Badge status={item.status} /></td><td>{fmt(item.updatedAt)}</td><td><div className="table-actions">{item.status === 'PENDING' && <><button className="approve-button" onClick={() => onAction('job', item, 'PUBLISHED')}>Duyệt</button><button className="reject-button" onClick={() => onAction('job', item, 'REJECTED')}>Từ chối</button></>}</div></td></tr>)}</Table>
+  if (section === 'companies') return <Table headings={['Doanh nghiệp', 'Trạng thái', 'Quy mô dữ liệu', 'Cập nhật', 'Thao tác']}>{items.map((item) => <tr key={item.id}><td><button className="table-link" onClick={() => onDetail(item)}>{item.name}</button><small>{item.industry || 'Chưa cập nhật ngành'}</small></td><td><Badge status={item.status} /></td><td>{item._count?.recruiters || 0} nhà tuyển dụng · {item._count?.jobs || 0} tin</td><td>{fmt(item.updatedAt)}</td><td><button className={item.status === 'ACTIVE' ? 'reject-button' : 'approve-button'} onClick={() => onAction('company', item, item.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE')}>{item.status === 'ACTIVE' ? 'Đình chỉ' : 'Khôi phục'}</button></td></tr>)}</Table>
+  if (section === 'reports') return <Table headings={['Báo cáo', 'Đối tượng', 'Người gửi', 'Trạng thái', 'Thao tác']}>{items.map((item) => <tr key={item.id}><td><button className="table-link" onClick={() => onDetail(item)}>Báo cáo #{item.id}</button><small>{labels[item.reason]}</small></td><td>{item.job?.title || item.company?.name}</td><td>{item.reporter?.fullName}</td><td><Badge status={item.status} /></td><td><button className="table-link" onClick={() => onDetail(item)}>Xem và xử lý</button></td></tr>)}</Table>
+  if (section === 'users') return <Table headings={['Tài khoản', 'Vai trò', 'Trạng thái', 'Ngày tạo', 'Thao tác']}>{items.map((item) => <tr key={item.id}><td><button className="table-link" onClick={() => onDetail(item)}>{item.fullName}</button><small>{item.email}</small></td><td>{labels[item.role]}</td><td><Badge status={item.status} /></td><td>{fmt(item.createdAt)}</td><td>{item.role !== 'ADMIN' && <button className="table-link" onClick={() => onAction('user', item, item.status === 'ACTIVE' ? 'BANNED' : 'ACTIVE')}>{item.status === 'ACTIVE' ? 'Khóa' : 'Mở khóa'}</button>}</td></tr>)}</Table>
+  if (section === 'reviews') return <Table headings={['Doanh nghiệp', 'Đánh giá', 'Tác giả', 'Thao tác']}>{items.map((item) => <tr key={item.id}><td>{item.company?.name}</td><td><strong>{'★'.repeat(item.rating)} {item.title}</strong><small>{item.pros}</small></td><td>{item.author?.fullName || 'Ẩn danh'}</td><td><div className="table-actions"><button className="approve-button" onClick={() => onAction('review', item, 'APPROVED')}>Duyệt</button><button className="reject-button" onClick={() => onAction('review', item, 'REJECTED')}>Từ chối</button></div></td></tr>)}</Table>
+  return <Table headings={['Thời gian', 'Người thực hiện', 'Hành động', 'Đối tượng']}>{items.map((item) => <tr key={item.id}><td>{fmt(item.createdAt)}</td><td>{item.user?.fullName || 'Hệ thống'}</td><td>{actionLabels[item.action] || 'Hoạt động hệ thống'}</td><td>{entityLabels[item.entity] || 'Đối tượng hệ thống'} #{item.entityId}</td></tr>)}</Table>
+}
+
+function DetailModal({ section, detail, onClose, onAction }) {
+  if (!detail) return null
+  const target = detail.job || detail.company
+  return <Modal open title={section === 'reports' ? `Báo cáo #${detail.id}` : detail.name || detail.fullName || detail.title} onClose={onClose}><div className="admin-detail">{section === 'reports' && <><p><strong>Đối tượng:</strong> {target?.title || target?.name}</p><p><strong>Lý do:</strong> {labels[detail.reason]}</p><p><strong>Mô tả:</strong> {detail.description}</p><p><strong>Người gửi:</strong> {detail.reporter?.fullName} · {detail.reporter?.email}</p><p><strong>Trạng thái:</strong> {labels[detail.status]}</p>{['PENDING', 'REVIEWING'].includes(detail.status) && <div className="admin-modal-actions">{detail.status === 'PENDING' && <button className="ghost-button" onClick={() => onAction('report', detail, 'REVIEWING')}>Bắt đầu xem xét</button>}<button className="primary-button" onClick={() => onAction('report', detail, 'RESOLVED')}>Đã giải quyết</button><button className="reject-button" onClick={() => onAction('report', detail, 'REJECTED')}>Từ chối</button></div>}</>}{section === 'companies' && <><p><strong>Trạng thái:</strong> {labels[detail.status]}</p><p>{detail.description || 'Chưa có giới thiệu doanh nghiệp.'}</p><p><strong>Địa chỉ:</strong> {detail.address || 'Chưa cập nhật'}</p><p><strong>Nhà tuyển dụng:</strong> {detail.recruiters?.length || 0} · <strong>Tin tuyển dụng:</strong> {detail.jobs?.length || 0}</p><button className={detail.status === 'ACTIVE' ? 'reject-button' : 'approve-button'} onClick={() => onAction('company', detail, detail.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE')}>{detail.status === 'ACTIVE' ? 'Đình chỉ doanh nghiệp' : 'Khôi phục doanh nghiệp'}</button></>}{section === 'users' && <><p><strong>Email:</strong> {detail.email}</p><p><strong>Vai trò:</strong> {labels[detail.role]}</p><p><strong>Trạng thái:</strong> {labels[detail.status]}</p></>}{section === 'jobs' && <><p><strong>Doanh nghiệp:</strong> {detail.company?.name}</p><p><strong>Trạng thái:</strong> {labels[detail.status]}</p><p className="admin-preline">{detail.description}</p></>}</div></Modal>
+}
+
+function ActionModal({ action, note, setNote, saving, onClose, onSubmit }) {
+  if (!action) return null
+  const needsNote = ['REJECTED', 'SUSPENDED', 'RESOLVED'].includes(action.targetStatus)
+  const title = action.kind === 'company' ? (action.targetStatus === 'SUSPENDED' ? 'Đình chỉ doanh nghiệp' : 'Khôi phục doanh nghiệp') : action.kind === 'job' ? (action.targetStatus === 'PUBLISHED' ? 'Duyệt tin tuyển dụng' : 'Từ chối tin tuyển dụng') : action.kind === 'report' ? 'Cập nhật báo cáo' : action.kind === 'user' ? 'Đổi trạng thái tài khoản' : 'Kiểm duyệt đánh giá'
+  return <Modal open title={title} onClose={onClose}><form className="admin-action-form" onSubmit={onSubmit}><p>{action.kind === 'company' && action.targetStatus === 'SUSPENDED' ? 'Doanh nghiệp và các tin đang đăng sẽ bị ẩn khỏi trang công khai. Dữ liệu ứng tuyển hiện có vẫn được giữ nguyên.' : 'Vui lòng xác nhận thao tác quản trị này.'}</p><label>Ghi chú {needsNote ? '(bắt buộc)' : '(tùy chọn)'}<textarea rows="4" required={needsNote} maxLength="2000" value={note} onChange={(event) => setNote(event.target.value)} /></label><div className="admin-modal-actions"><button type="button" className="ghost-button" onClick={onClose}>Hủy</button><button className="primary-button" disabled={saving}>{saving ? 'Đang lưu...' : 'Xác nhận'}</button></div></form></Modal>
 }

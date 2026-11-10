@@ -48,6 +48,26 @@
 .status-pill { display: inline-block; border-radius: 20px; padding: 5px 8px; font-size: 10px; font-weight: 700; }
 .status-pill.active { color: #16704c; background: #eaf8f1; }
 .status-pill.banned, .status-pill.inactive { color: #a34b4b; background: #fff0f0; }
+.status-pill.pending, .status-pill.reviewing { color: #8a5a00; background: #fff7da; }
+.status-pill.published, .status-pill.approved, .status-pill.resolved { color: #16704c; background: #eaf8f1; }
+.status-pill.rejected, .status-pill.suspended, .status-pill.closed { color: #a34b4b; background: #fff0f0; }
+.status-pill.draft { color: #536477; background: #eef2f6; }
+.admin-filters { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; padding: 16px; border: 1px solid #e5edf5; border-radius: 11px; background: white; }
+.admin-filters label, .admin-action-form label, .report-form label { display: grid; gap: 6px; color: #526579; font-size: 12px; font-weight: 700; }
+.admin-filters input, .admin-filters select, .admin-action-form textarea, .report-form select, .report-form textarea { box-sizing: border-box; min-height: 42px; border: 1px solid #d7e4f1; border-radius: 8px; padding: 9px 11px; color: var(--ink); background: white; font: inherit; }
+.admin-filters input { min-width: min(280px, 70vw); }
+.admin-filters button, .admin-modal-actions button { min-height: 42px; }
+.admin-skeletons { display: grid; gap: 12px; }
+.admin-pagination { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 20px; color: var(--muted); font-size: 12px; }
+.admin-pagination button { min-height: 40px; border: 1px solid #d7e4f1; border-radius: 7px; padding: 8px 12px; color: var(--blue-700); background: white; }
+.admin-pagination button:disabled { opacity: .45; }
+.admin-detail { display: grid; gap: 8px; color: #526579; line-height: 1.55; }
+.admin-detail p { margin: 0; }
+.admin-preline { max-height: 42vh; overflow: auto; white-space: pre-line; }
+.admin-action-form, .report-form { display: grid; gap: 16px; }
+.admin-action-form p, .report-form p { margin: 0; color: #526579; line-height: 1.55; }
+.admin-modal-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+.public-report-action { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 12px 0; }
 
 @media (max-width: 980px) {
   .admin-shell { grid-template-columns: 204px 1fr; }
@@ -70,6 +90,10 @@
   .section-heading { align-items: flex-start; flex-wrap: wrap; gap: 12px; }
   .section-heading select { max-width: 100%; min-height: 44px; }
   .approve-button, .reject-button, .table-link, .view-link { min-height: 40px; }
+  .admin-filters { display: grid; grid-template-columns: 1fr; }
+  .admin-filters input, .admin-filters select, .admin-filters button { width: 100%; min-width: 0; min-height: 44px; }
+  .admin-pagination { justify-content: space-between; }
+  .admin-pagination span { text-align: center; }
 }
 
 @media (max-width: 480px) {
