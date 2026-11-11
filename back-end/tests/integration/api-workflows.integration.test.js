@@ -32,7 +32,8 @@ const database = vi.hoisted(() => {
     Object.fromEntries(methodNames.map((method) => [method, vi.fn()]))
   ]))
   prisma.$transaction = vi.fn()
-  return { prisma, state: { users: [], refreshTokens: [], resetTokens: [], nextUserId: 10, nextRefreshId: 1, nextResetId: 1 } }
+  prisma.$queryRaw = vi.fn()
+  return { prisma, state: { users: [], refreshTokens: [], resetTokens: [], reports: [], nextUserId: 10, nextRefreshId: 1, nextResetId: 1, nextReportId: 1 } }
 })
 
 const mail = vi.hoisted(() => ({ sendEmail: vi.fn() }))
@@ -41,6 +42,8 @@ globalThis.__JOB_CONNECT_TEST_SEND_EMAIL__ = mail.sendEmail
 
 const appModule = await import('../../src/app.js')
 const app = appModule.default || appModule
+const passwordRecoveryModule = await import('../../src/services/passwordRecovery.service.js')
+const passwordRecovery = passwordRecoveryModule.default || passwordRecoveryModule
 const storageModule = await import('../../src/storage/localStorage.js')
 const storage = storageModule.default || storageModule
 
@@ -56,6 +59,47 @@ function cookieValue(response) {
   return response.headers['set-cookie']?.[0]?.split(';')[0]
 }
 
+function installSerializedReportStore() {
+  const { prisma, state } = database
+  let tail = Promise.resolve()
+  prisma.$transaction.mockImplementation((work) => {
+    if (Array.isArray(work)) return Promise.all(work)
+    const previous = tail
+    let release
+    tail = new Promise((resolve) => { release = resolve })
+    return previous.then(() => work(prisma)).finally(release)
+  })
+  prisma.$queryRaw.mockImplementation(async (_query, userId) => [{ id: userId }])
+  prisma.report.count.mockImplementation(async ({ where }) => state.reports.filter((item) =>
+    item.reporterUserId === where.reporterUserId && item.createdAt >= where.createdAt.gte
+  ).length)
+  prisma.report.findFirst.mockImplementation(async ({ where }) => state.reports.find((item) =>
+    item.reporterUserId === where.reporterUserId &&
+    item.targetType === where.targetType &&
+    (where.jobId === undefined || item.jobId === where.jobId) &&
+    (where.companyId === undefined || item.companyId === where.companyId) &&
+    where.status.in.includes(item.status)
+  ) || null)
+  prisma.report.create.mockImplementation(async ({ data }) => {
+    const item = { id: state.nextReportId++, status: 'PENDING', createdAt: new Date(), updatedAt: new Date(), ...data }
+    state.reports.push(item)
+    return { id: item.id, targetType: item.targetType, reason: item.reason, status: item.status, createdAt: item.createdAt }
+  })
+  prisma.job.findFirst.mockImplementation(async ({ where }) => ({ id: where.id }))
+}
+
+function installSerializedTransactions() {
+  const { prisma } = database
+  let tail = Promise.resolve()
+  prisma.$transaction.mockImplementation((work) => {
+    if (Array.isArray(work)) return Promise.all(work)
+    const previous = tail
+    let release
+    tail = new Promise((resolve) => { release = resolve })
+    return previous.then(() => work(prisma)).finally(release)
+  })
+}
+
 function resetDatabase() {
   const { prisma, state } = database
   for (const model of Object.values(prisma)) {
@@ -64,6 +108,7 @@ function resetDatabase() {
     }
   }
   prisma.$transaction.mockReset()
+  prisma.$queryRaw.mockReset().mockImplementation(async (_query, userId) => [{ id: userId }])
   mail.sendEmail.mockReset().mockResolvedValue(undefined)
   state.users = [
     { id: 1, email: 'candidate@example.test', fullName: 'Candidate', role: 'CANDIDATE', status: 'ACTIVE', tokenVersion: 0 },
@@ -73,9 +118,11 @@ function resetDatabase() {
   ]
   state.refreshTokens = []
   state.resetTokens = []
+  state.reports = []
   state.nextUserId = 10
   state.nextRefreshId = 1
   state.nextResetId = 1
+  state.nextReportId = 1
 
   prisma.user.findUnique.mockImplementation(async ({ where }) => state.users.find((user) =>
     (where.id !== undefined && user.id === where.id) || (where.email !== undefined && user.email === where.email)
@@ -121,8 +168,11 @@ function resetDatabase() {
     return { count: matches.length }
   })
   prisma.passwordResetToken.findUnique.mockImplementation(async ({ where }) => state.resetTokens.find((entry) => entry.tokenHash === where.tokenHash) || null)
+  prisma.passwordResetToken.findFirst.mockImplementation(async ({ where }) => state.resetTokens
+    .filter((entry) => entry.userId === where.userId && (!where.createdAt?.gte || entry.createdAt >= where.createdAt.gte))
+    .sort((left, right) => right.createdAt - left.createdAt)[0] || null)
   prisma.passwordResetToken.create.mockImplementation(async ({ data }) => {
-    const item = { id: state.nextResetId++, usedAt: null, ...data }
+    const item = { id: state.nextResetId++, usedAt: null, createdAt: new Date(), ...data }
     state.resetTokens.push(item)
     return item
   })
@@ -338,6 +388,31 @@ describe('notification ownership workflow', () => {
 })
 
 describe('password recovery security workflow', () => {
+  it('atomically issues one token and email for concurrent requests and enforces cooldown', async () => {
+    const user = database.state.users[0]
+    const sendResetLinkImpl = vi.fn(async () => {})
+    installSerializedTransactions()
+    const dependencies = {
+      client: database.prisma, sendResetLinkImpl,
+      floorMs: 0, jitterMs: 0, waitImpl: async () => {}
+    }
+
+    const responses = await Promise.all([
+      passwordRecovery.requestPasswordReset(user.email, dependencies),
+      passwordRecovery.requestPasswordReset(user.email, dependencies)
+    ])
+    await vi.waitFor(() => expect(sendResetLinkImpl).toHaveBeenCalledOnce())
+    expect(responses[0]).toEqual(responses[1])
+    expect(database.state.resetTokens).toHaveLength(1)
+    expect(database.state.resetTokens[0].tokenHash).toMatch(/^[a-f0-9]{64}$/)
+    expect(JSON.stringify(database.state.resetTokens[0])).not.toContain(sendResetLinkImpl.mock.calls[0][1])
+
+    const cooldownResponse = await passwordRecovery.requestPasswordReset(user.email, dependencies)
+    expect(cooldownResponse).toEqual(responses[0])
+    expect(sendResetLinkImpl).toHaveBeenCalledOnce()
+    expect(database.state.resetTokens).toHaveLength(1)
+  })
+
   it('does not enumerate accounts and enforces expiry, single use, password replacement, and session revocation', async () => {
     const user = database.state.users[0]
     user.passwordHash = await bcrypt.hash('OldPassword123!', 4)
@@ -353,7 +428,9 @@ describe('password recovery security workflow', () => {
     expect(database.state.resetTokens[0].tokenHash).toMatch(/^[a-f0-9]{64}$/)
 
     const resetText = mail.sendEmail.mock.calls[0][0].text
-    const rawToken = decodeURIComponent(new URL(resetText.match(/https?:\/\/\S+/)[0]).searchParams.get('token'))
+    const resetUrl = new URL(resetText.match(/https?:\/\/\S+/)[0])
+    const rawToken = decodeURIComponent(new URLSearchParams(resetUrl.hash.slice(1)).get('token'))
+    expect(resetUrl.search).toBe('')
     expect(resetText).not.toContain(database.state.resetTokens[0].tokenHash)
 
     const confirmed = await request(app).post('/api/auth/password-reset/confirm').send({ token: rawToken, password: 'NewPassword123!' })
@@ -381,7 +458,7 @@ describe('password recovery security workflow', () => {
       const response = await request(app).post('/api/auth/password-reset/request').send({ email: user.email })
       expect(response.status).toBe(200)
       expect(response.body.message).toContain('Nếu email tồn tại')
-      expect(errorLog).toHaveBeenCalledWith('[password-reset-email]', { name: 'Error' })
+      await vi.waitFor(() => expect(errorLog).toHaveBeenCalledWith('[password-reset-email]', { name: 'Error', code: null }))
       expect(JSON.stringify(errorLog.mock.calls)).not.toContain(user.email)
       expect(JSON.stringify(errorLog.mock.calls)).not.toContain(database.state.resetTokens[0].tokenHash)
     } finally {
@@ -1075,6 +1152,62 @@ describe('application and ownership workflows', () => {
 })
 
 describe('admin moderation and conversations', () => {
+  it.each([10, 50])('serializes %i simultaneous reports for the same reporter and target', async (requestCount) => {
+    const candidate = database.state.users[0]
+    installSerializedReportStore()
+    const payload = { targetType: 'JOB', targetId: 25, reason: 'MISLEADING', description: 'Synthetic concurrent report.' }
+
+    const responses = await Promise.all(Array.from({ length: requestCount }, () =>
+      request(app).post('/api/reports').set('Authorization', `Bearer ${tokenFor(candidate)}`).send(payload)
+    ))
+
+    expect(responses.filter((response) => response.status === 201)).toHaveLength(1)
+    expect(responses.filter((response) => response.status === 409)).toHaveLength(requestCount - 1)
+    expect(database.state.reports).toHaveLength(1)
+    expect(responses.find((response) => response.status === 201).body.data).not.toHaveProperty('reporterUserId')
+  })
+
+  it('does not exceed five reports when six different targets arrive concurrently', async () => {
+    const candidate = database.state.users[0]
+    installSerializedReportStore()
+
+    const responses = await Promise.all(Array.from({ length: 6 }, (_, index) =>
+      request(app).post('/api/reports').set('Authorization', `Bearer ${tokenFor(candidate)}`).send({
+        targetType: 'JOB', targetId: 100 + index, reason: 'SPAM', description: `Synthetic target ${index}`
+      })
+    ))
+
+    expect(responses.filter((response) => response.status === 201)).toHaveLength(5)
+    expect(responses.filter((response) => response.status === 429)).toHaveLength(1)
+    expect(database.state.reports).toHaveLength(5)
+  })
+
+  it('allows different reporters to report the same target', async () => {
+    const [candidate, otherCandidate] = [database.state.users[0], database.state.users[3]]
+    installSerializedReportStore()
+    const payload = { targetType: 'JOB', targetId: 25, reason: 'FRAUD' }
+
+    const responses = await Promise.all([candidate, otherCandidate].map((user) =>
+      request(app).post('/api/reports').set('Authorization', `Bearer ${tokenFor(user)}`).send(payload)
+    ))
+
+    expect(responses.map((response) => response.status)).toEqual([201, 201])
+    expect(database.state.reports).toHaveLength(2)
+  })
+
+  it.each(['P2028', 'P2034'])('maps report transaction contention %s to a conflict without inserting', async (code) => {
+    const candidate = database.state.users[0]
+    database.prisma.job.findFirst.mockResolvedValue({ id: 25 })
+    database.prisma.$transaction.mockRejectedValue(Object.assign(new Error('synthetic transaction contention'), { code }))
+
+    const response = await request(app).post('/api/reports')
+      .set('Authorization', `Bearer ${tokenFor(candidate)}`)
+      .send({ targetType: 'JOB', targetId: 25, reason: 'SPAM' })
+
+    expect(response.status).toBe(409)
+    expect(database.prisma.report.create).not.toHaveBeenCalled()
+  })
+
   it('creates a minimized report for a public job and rejects a duplicate', async () => {
     const candidate = database.state.users[0]
     database.prisma.job.findFirst.mockResolvedValue({ id: 25 })
@@ -1105,6 +1238,40 @@ describe('admin moderation and conversations', () => {
 
     expect(response.status).toBe(200)
     expect(database.prisma.report.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 90, status: 'REVIEWING', updatedAt } }))
+    expect(database.prisma.auditLog.create).toHaveBeenCalledOnce()
+    expect(database.prisma.notification.create).toHaveBeenCalledOnce()
+  })
+
+  it('allows only one of two simultaneous admin moderation transitions to write audit and notification', async () => {
+    const admin = database.state.users[2]
+    const initialUpdatedAt = new Date('2026-02-01T00:00:00.000Z')
+    const reportState = { id: 90, reporterUserId: 1, status: 'REVIEWING', resolutionNote: null, updatedAt: initialUpdatedAt }
+    let outerReads = 0
+    let releaseReads
+    const bothRead = new Promise((resolve) => { releaseReads = resolve })
+    database.prisma.report.findUnique.mockImplementation(async () => {
+      if (outerReads < 2) {
+        outerReads += 1
+        if (outerReads === 2) releaseReads()
+        await bothRead
+      }
+      return { ...reportState }
+    })
+    database.prisma.report.updateMany.mockImplementation(async ({ where, data }) => {
+      if (reportState.status !== where.status || reportState.updatedAt.getTime() !== where.updatedAt.getTime()) return { count: 0 }
+      Object.assign(reportState, data, { updatedAt: new Date(initialUpdatedAt.getTime() + 1) })
+      return { count: 1 }
+    })
+    database.prisma.auditLog.create.mockResolvedValue({ id: 1 })
+    database.prisma.notification.create.mockResolvedValue({ id: 2 })
+
+    const body = { status: 'RESOLVED', note: 'Concurrent resolution.', expectedUpdatedAt: initialUpdatedAt.toISOString() }
+    const responses = await Promise.all([
+      request(app).patch('/api/admin/reports/90/status').set('Authorization', `Bearer ${tokenFor(admin)}`).send(body),
+      request(app).patch('/api/admin/reports/90/status').set('Authorization', `Bearer ${tokenFor(admin)}`).send(body)
+    ])
+
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 409])
     expect(database.prisma.auditLog.create).toHaveBeenCalledOnce()
     expect(database.prisma.notification.create).toHaveBeenCalledOnce()
   })

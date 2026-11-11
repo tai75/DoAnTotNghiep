@@ -9,7 +9,7 @@ const validate = require('../middleware/validate');
 const { authenticate } = require('../middleware/auth');
 const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
-const { sendEmail } = require('../services/mail.service');
+const { consumePasswordResetToken, requestPasswordReset } = require('../services/passwordRecovery.service');
 
 const authRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -218,15 +218,6 @@ async function revokeRefreshSession(rawToken, database = prisma, now = new Date(
   });
 }
 
-async function sendResetLink(email, token) {
-  const link = `${config.frontendUrl}/reset-password?token=${encodeURIComponent(token)}`;
-  await sendEmail({
-    to: email,
-    subject: 'Đặt lại mật khẩu Job Connect',
-    text: `Mở liên kết sau để đặt lại mật khẩu: ${link}`
-  });
-}
-
 function publicUser(user) {
   return {
     id: user.id,
@@ -289,43 +280,11 @@ router.post('/refresh', refreshRateLimit, asyncHandler(async (req, res) => {
 }));
 
 router.post('/password-reset/request', passwordResetRequestRateLimit, validate(passwordResetRequestSchema), asyncHandler(async (req, res) => {
-  const user = await prisma.user.findUnique({ where: { email: req.body.email } });
-  if (!user) {
-    res.json({ success: true, message: 'Nếu email tồn tại, yêu cầu đặt lại mật khẩu đã được tạo' });
-    return;
-  }
-  const token = crypto.randomBytes(32).toString('hex');
-  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-  await prisma.$transaction([
-    prisma.passwordResetToken.updateMany({ where: { userId: user.id, usedAt: null }, data: { usedAt: new Date() } }),
-    prisma.passwordResetToken.create({
-      data: { userId: user.id, tokenHash, expiresAt: new Date(Date.now() + 60 * 60 * 1000) }
-    })
-  ]);
-  try {
-    await sendResetLink(user.email, token);
-  } catch (error) {
-    console.error('[password-reset-email]', { name: error.name });
-  }
-  res.json({ success: true, message: 'Nếu email tồn tại, yêu cầu đặt lại mật khẩu đã được tạo' });
+  res.json(await requestPasswordReset(req.body.email));
 }));
 
 router.post('/password-reset/confirm', authRateLimit, validate(passwordResetSchema), asyncHandler(async (req, res) => {
-  const tokenHash = crypto.createHash('sha256').update(req.body.token).digest('hex');
-  const resetToken = await prisma.passwordResetToken.findUnique({ where: { tokenHash } });
-  if (!resetToken || resetToken.usedAt || resetToken.expiresAt <= new Date()) {
-    throw new ApiError(400, 'Token đặt lại mật khẩu không hợp lệ hoặc đã hết hạn');
-  }
-  const passwordHash = await bcrypt.hash(req.body.password, 12);
-  await prisma.$transaction(async (transaction) => {
-    const claimed = await transaction.passwordResetToken.updateMany({
-      where: { id: resetToken.id, usedAt: null, expiresAt: { gt: new Date() } },
-      data: { usedAt: new Date() }
-    });
-    if (claimed.count !== 1) throw new ApiError(400, 'Token đặt lại mật khẩu không hợp lệ hoặc đã hết hạn');
-    await transaction.user.update({ where: { id: resetToken.userId }, data: { passwordHash, tokenVersion: { increment: 1 } } });
-    await transaction.refreshToken.updateMany({ where: { userId: resetToken.userId, revokedAt: null }, data: { revokedAt: new Date() } });
-  });
+  await consumePasswordResetToken(req.body.token, req.body.password);
   res.json({ success: true, message: 'Đặt lại mật khẩu thành công' });
 }));
 

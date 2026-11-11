@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { authApi } from '../services/api'
 import useDocumentMeta from '../hooks/useDocumentMeta'
+import { captureResetTokenFromLocation, clearResetToken, getResetToken } from '../security/resetTokenMemory.js'
 
 export default function PasswordRecoveryPage() {
   const location = useLocation()
   const navigate = useNavigate()
   const isReset = location.pathname === '/reset-password'
-  const token = isReset ? new URLSearchParams(location.search).get('token') : null
+  const token = isReset ? (getResetToken() || captureResetTokenFromLocation()) : null
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmation, setConfirmation] = useState('')
@@ -37,6 +38,7 @@ export default function PasswordRecoveryPage() {
     try {
       if (isReset) {
         await authApi.confirmPasswordReset(token, password)
+        clearResetToken()
         setCompleted(true)
         setMessage({ type: 'success', text: 'Đặt lại mật khẩu thành công. Bạn sẽ được chuyển về trang đăng nhập.' })
       } else {
@@ -58,7 +60,7 @@ export default function PasswordRecoveryPage() {
         <div className="auth-heading">
           <p className="eyebrow">BẢO MẬT TÀI KHOẢN</p>
           <h2>{isReset ? 'Đặt lại mật khẩu' : 'Quên mật khẩu?'}</h2>
-          <p>{isReset ? 'Tạo mật khẩu mới cho tài khoản của bạn.' : 'Nhập email để nhận hướng dẫn khôi phục tài khoản.'}</p>
+          <p>{isReset ? 'Tạo mật khẩu mới cho tài khoản của bạn. Vì lý do bảo mật, nếu tải lại trang bạn cần mở lại liên kết trong email.' : 'Nhập email để nhận hướng dẫn khôi phục tài khoản.'}</p>
         </div>
         <form className="auth-form" onSubmit={submit}>
           {!isReset && <label>Email<input type="email" value={email} onChange={(event) => { setEmail(event.target.value); setMessage(null) }} autoComplete="email" required /></label>}

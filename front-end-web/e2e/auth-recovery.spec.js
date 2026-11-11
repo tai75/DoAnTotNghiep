@@ -28,8 +28,13 @@ test.describe('secure password recovery UI', () => {
     await expect(page.getByRole('button', { name: 'Đặt lại mật khẩu' })).toBeDisabled()
 
     const token = 'qa01-browser-only-reset-token-1234567890'
-    await page.goto(`/reset-password?token=${token}`)
+    await page.goto(`/reset-password#token=${token}`)
+    await expect(page).toHaveURL(/\/reset-password$/)
     await expect(page.locator('body')).not.toContainText(token)
+    expect(await page.evaluate(() => ({
+      local: Object.values(localStorage),
+      session: Object.values(sessionStorage),
+    }))).toEqual({ local: [], session: [] })
     await page.getByLabel('Mật khẩu mới').fill('NewPassword123!')
     await page.getByLabel('Xác nhận mật khẩu').fill('MismatchPassword123!')
     await page.getByRole('button', { name: 'Đặt lại mật khẩu' }).click()
@@ -45,13 +50,31 @@ test.describe('secure password recovery UI', () => {
     await expect(page.getByRole('alert')).toContainText('không hợp lệ hoặc đã hết hạn')
 
     await page.unroute('**/api/auth/password-reset/confirm')
-    await page.route('**/api/auth/password-reset/confirm', (route) => route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ success: true, message: 'Đặt lại mật khẩu thành công' }),
-    }))
+    await page.route('**/api/auth/password-reset/confirm', async (route) => {
+      expect((await route.request().postDataJSON()).token).toBe(token)
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, message: 'Đặt lại mật khẩu thành công' }),
+      })
+    })
     await page.getByRole('button', { name: 'Đặt lại mật khẩu' }).click()
     await expect(page.getByRole('alert')).toContainText('Đặt lại mật khẩu thành công')
     await expect(page).toHaveURL(/\/login\?reset=success$/, { timeout: 5_000 })
+  })
+
+  test('scrubs a legacy query token and does not recover it after reload', async ({ page }) => {
+    const token = 'qa01-legacy-query-reset-token-1234567890'
+    await page.goto(`/reset-password?token=${token}`)
+    await expect(page).toHaveURL(/\/reset-password$/)
+    await expect(page.locator('body')).not.toContainText(token)
+    expect(await page.evaluate(() => ({
+      local: Object.values(localStorage),
+      session: Object.values(sessionStorage),
+    }))).toEqual({ local: [], session: [] })
+
+    await page.reload()
+    await expect(page.getByRole('alert')).toContainText('thiếu token')
+    await expect(page.getByRole('button', { name: 'Đặt lại mật khẩu' })).toBeDisabled()
   })
 })

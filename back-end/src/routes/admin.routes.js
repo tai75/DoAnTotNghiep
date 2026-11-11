@@ -106,6 +106,17 @@ const reportStatusSchema = z.object({
   params: z.object({ id: z.coerce.number().int().positive() }), query: z.object({})
 });
 
+async function updateReportStatusAtomic({ report, status, normalizedNote, expectedUpdatedAt, adminUserId }, client = prisma) {
+  return client.$transaction(async (transaction) => {
+    const changed = await transaction.report.updateMany({ where: { id: report.id, status: report.status, updatedAt: expectedUpdatedAt }, data: { status, resolutionNote: normalizedNote, resolvedByUserId: adminUserId, resolvedAt: ['RESOLVED', 'REJECTED'].includes(status) ? new Date() : null } });
+    if (changed.count !== 1) throw new ApiError(409, 'Báo cáo đã được quản trị viên khác xử lý, vui lòng tải lại');
+    const result = await transaction.report.findUnique({ where: { id: report.id } });
+    await transaction.auditLog.create({ data: { userId: adminUserId, action: 'REPORT_STATUS_UPDATED', entity: 'Report', entityId: report.id, metadata: { fromStatus: report.status, toStatus: status, note: normalizedNote } } });
+    await transaction.notification.create({ data: { userId: report.reporterUserId, type: 'REPORT_STATUS', title: 'Báo cáo vi phạm đã được cập nhật', content: status === 'REVIEWING' ? 'Báo cáo của bạn đang được quản trị viên xem xét.' : status === 'RESOLVED' ? 'Báo cáo của bạn đã được giải quyết.' : 'Báo cáo của bạn đã bị từ chối.', link: null } });
+    return result;
+  });
+}
+
 const statsSchema = z.object({
   body: z.object({}),
   params: z.object({}),
@@ -450,14 +461,7 @@ router.patch('/reports/:id/status', validate(reportStatusSchema), asyncHandler(a
   if (report.status === status && (report.resolutionNote || null) === normalizedNote) return res.json({ success: true, data: report, meta: { idempotent: true } });
   const allowed = report.status === 'PENDING' ? ['REVIEWING', 'RESOLVED', 'REJECTED'] : report.status === 'REVIEWING' ? ['RESOLVED', 'REJECTED'] : [];
   if (!allowed.includes(status)) throw new ApiError(409, 'Báo cáo không thể chuyển sang trạng thái này');
-  const updated = await prisma.$transaction(async (transaction) => {
-    const changed = await transaction.report.updateMany({ where: { id: report.id, status: report.status, updatedAt: expectedUpdatedAt }, data: { status, resolutionNote: normalizedNote, resolvedByUserId: req.user.id, resolvedAt: ['RESOLVED', 'REJECTED'].includes(status) ? new Date() : null } });
-    if (changed.count !== 1) throw new ApiError(409, 'Báo cáo đã được quản trị viên khác xử lý, vui lòng tải lại');
-    const result = await transaction.report.findUnique({ where: { id: report.id } });
-    await transaction.auditLog.create({ data: { userId: req.user.id, action: 'REPORT_STATUS_UPDATED', entity: 'Report', entityId: report.id, metadata: { fromStatus: report.status, toStatus: status, note: normalizedNote } } });
-    await transaction.notification.create({ data: { userId: report.reporterUserId, type: 'REPORT_STATUS', title: 'Báo cáo vi phạm đã được cập nhật', content: status === 'REVIEWING' ? 'Báo cáo của bạn đang được quản trị viên xem xét.' : status === 'RESOLVED' ? 'Báo cáo của bạn đã được giải quyết.' : 'Báo cáo của bạn đã bị từ chối.', link: null } });
-    return result;
-  });
+  const updated = await updateReportStatusAtomic({ report, status, normalizedNote, expectedUpdatedAt, adminUserId: req.user.id });
   res.json({ success: true, data: updated });
 }));
 
@@ -481,3 +485,4 @@ router.patch('/reviews/:id/moderation', validate(reviewModerationSchema), asyncH
 }));
 
 module.exports = router;
+module.exports.updateReportStatusAtomic = updateReportStatusAtomic;
