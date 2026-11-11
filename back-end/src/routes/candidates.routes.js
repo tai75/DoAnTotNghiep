@@ -14,6 +14,7 @@ const { extractResumeProfile, resumeImportSchema, analyzeResumeForJob } = requir
 const { calculateMatchScore } = require('../services/matching.service');
 const storage = require('../storage/localStorage');
 const { setPrivateFileHeaders } = require('../storage/httpHeaders');
+const { executeWithConsent } = require('../services/aiConsent.service');
 
 const httpUrl = z.string().url().max(500).refine((value) => /^https?:\/\//i.test(value), 'Chỉ chấp nhận liên kết http hoặc https');
 
@@ -474,22 +475,16 @@ router.post('/me/job-analysis/:jobId', authenticate, authorize('CANDIDATE'), val
   const resume = candidate.resumes[0];
   if (!resume) throw new ApiError(400, 'Bạn cần chọn CV mặc định trước khi phân tích');
   const match = calculateMatchScore(candidate, job);
-  const cached = await prisma.resumeJobAnalysis.findUnique({ where: { resumeId_jobId: { resumeId: resume.id, jobId: job.id } } });
-  if (cached) {
-    return res.json({ success: true, data: {
-      fitScore: Number(cached.fitScore),
-      missingKeywords: cached.missingKeywords,
-      strengths: cached.strengths,
-      suggestions: cached.suggestions,
-      matchedSkills: match.matchedSkills,
-      missingSkills: match.missingSkills,
-      disclaimer: 'Đây là gợi ý, không phải quyết định tuyển dụng.'
-    } });
-  }
-  const text = await extractResumeText(resume);
-  const result = await analyzeResumeForJob(req.user.id, text, job, match);
-  const analysis = await prisma.resumeJobAnalysis.create({
-    data: { resumeId: resume.id, jobId: job.id, fitScore: result.fitScore, missingKeywords: result.missingKeywords, strengths: result.strengths, suggestions: result.suggestions }
+  const analysis = await executeWithConsent({ actorUserId: req.user.id, scope: 'RESUME_JOB_ANALYSIS', operation: 'resume-job-analysis', input: `${resume.id}:${job.id}` }, async ({ consent }) => {
+    const cached = await prisma.resumeJobAnalysis.findUnique({ where: { resumeId_jobId: { resumeId: resume.id, jobId: job.id } } });
+    if (cached?.aiConsentId === consent.id) return cached;
+    const text = await extractResumeText(resume);
+    const result = await analyzeResumeForJob(req.user.id, text, job, match);
+    return prisma.resumeJobAnalysis.upsert({
+      where: { resumeId_jobId: { resumeId: resume.id, jobId: job.id } },
+      create: { resumeId: resume.id, jobId: job.id, fitScore: result.fitScore, missingKeywords: result.missingKeywords, strengths: result.strengths, suggestions: result.suggestions, aiConsentId: consent.id },
+      update: { fitScore: result.fitScore, missingKeywords: result.missingKeywords, strengths: result.strengths, suggestions: result.suggestions, aiConsentId: consent.id }
+    });
   });
   res.json({ success: true, data: {
     fitScore: Number(analysis.fitScore),
@@ -600,8 +595,10 @@ router.post('/me/resumes/:id/import', authenticate, authorize('CANDIDATE'), vali
   query: z.object({})
 })), asyncHandler(async (req, res) => {
   const { item } = await candidateResource(req, 'candidateResume', req.params.id);
-  const text = await extractResumeText(item);
-  const extracted = await extractResumeProfile(req.user.id, text);
+  const extracted = await executeWithConsent({ actorUserId: req.user.id, scope: 'RESUME_IMPORT', operation: 'resume-import', input: String(item.id) }, async () => {
+    const text = await extractResumeText(item);
+    return extractResumeProfile(req.user.id, text);
+  });
   const names = [...new Set(extracted.skills.map((name) => name.trim()).filter(Boolean))];
   const existing = names.length
     ? await prisma.skill.findMany({ where: { name: { in: names } }, select: { id: true, name: true } })

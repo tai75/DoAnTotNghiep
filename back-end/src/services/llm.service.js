@@ -1,5 +1,7 @@
 const { z } = require('zod');
 const config = require('../config/env');
+const { jobDescriptionInput, redactGeminiContents, redactText } = require('./aiRedaction.service');
+const { outboundAiRequest } = require('./aiConsent.service');
 
 const requestCounts = new Map();
 const WINDOW_MS = 60 * 60 * 1000;
@@ -76,26 +78,36 @@ async function callGemini(contents, tools = [], dependencies = {}) {
   const apiKey = dependencies.apiKey ?? config.geminiApiKey;
   if (!apiKey) throw new GeminiError('GEMINI_API_KEY chưa được cấu hình', { code: 'configuration' });
   const fetchImpl = dependencies.fetchImpl || global.fetch;
+  const nowImpl = dependencies.nowImpl || Date.now;
   const timeoutMs = dependencies.timeoutMs ?? config.llmTimeoutMs;
   if (typeof fetchImpl !== 'function') throw new GeminiError('Fetch API không khả dụng', { code: 'configuration' });
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new GeminiError('LLM timeout phải lớn hơn 0', { code: 'configuration' });
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const safeContents = redactGeminiContents(contents, { knownValues: dependencies.knownValues || [] });
   try {
-    const response = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${config.geminiModel}:generateContent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-      body: JSON.stringify({ contents, ...(tools.length ? { tools: [{ functionDeclarations: tools }] } : {}) }),
-      signal: controller.signal
+    return await outboundAiRequest(async ({ signal }) => {
+      const requestTimeoutMs = dependencies.deadlineAt
+        ? Math.min(timeoutMs, dependencies.deadlineAt - nowImpl())
+        : timeoutMs;
+      if (requestTimeoutMs <= 0) throw new GeminiError('Gemini retry chain timeout', { code: 'total_timeout', retryable: false });
+      const response = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${config.geminiModel}:generateContent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body: JSON.stringify({ contents: safeContents, ...(tools.length ? { tools: [{ functionDeclarations: tools }] } : {}) }),
+        signal
+      });
+      if (!response.ok) throw geminiErrorForStatus(response.status);
+      return await response.json();
+    }, {
+      consentRequirements: dependencies.consentRequirements, dataSubjectUserId: dependencies.dataSubjectUserId,
+      model: config.geminiModel, input: JSON.stringify(safeContents), client: dependencies.client,
+      semaphore: dependencies.semaphore,
+      deadlineAt: Math.min(dependencies.deadlineAt || Number.POSITIVE_INFINITY, nowImpl() + timeoutMs), nowImpl
     });
-    if (!response.ok) throw geminiErrorForStatus(response.status);
-    return await response.json();
   } catch (error) {
     if (error?.name === 'AbortError') throw new GeminiError('Gemini request timeout', { code: 'timeout', retryable: true });
+    if (error?.statusCode) throw error;
     if (error instanceof GeminiError) throw error;
     throw new GeminiError('Không thể kết nối Gemini', { code: 'network', retryable: true });
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -103,25 +115,41 @@ async function withRetry(operation, dependencies = {}) {
   const maxAttempts = dependencies.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
   const retryBaseMs = dependencies.retryBaseMs ?? DEFAULT_RETRY_BASE_MS;
   const waitImpl = dependencies.waitImpl || wait;
+  const nowImpl = dependencies.nowImpl || Date.now;
+  const totalTimeoutMs = dependencies.totalTimeoutMs ?? config.aiRetryTotalTimeoutMs;
   if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 6) throw new GeminiError('Số lần gọi Gemini không hợp lệ', { code: 'configuration' });
+  if (!Number.isFinite(totalTimeoutMs) || totalTimeoutMs <= 0) throw new GeminiError('Tổng timeout AI phải lớn hơn 0', { code: 'configuration' });
+  const deadlineAt = nowImpl() + totalTimeoutMs;
   let lastError;
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const remainingMs = deadlineAt - nowImpl();
+    if (remainingMs <= 0) throw new GeminiError('Gemini retry chain timeout', { code: 'total_timeout', retryable: false });
     try {
-      return await operation();
+      return await operation({ attempt, deadlineAt, remainingMs });
     } catch (error) {
       lastError = error;
       if (!error?.retryable || attempt === maxAttempts - 1) throw error;
-      await waitImpl(retryBaseMs * (2 ** attempt));
+      const delay = retryBaseMs * (2 ** attempt);
+      if (delay >= deadlineAt - nowImpl()) throw new GeminiError('Gemini retry chain timeout', { code: 'total_timeout', retryable: false });
+      await waitImpl(delay);
     }
   }
   throw lastError;
+}
+
+function callGeminiWithRetry(contents, tools = [], dependencies = {}) {
+  return withRetry(({ deadlineAt, remainingMs }) => callGemini(contents, tools, {
+    ...dependencies,
+    deadlineAt,
+    timeoutMs: Math.min(dependencies.timeoutMs ?? config.llmTimeoutMs, remainingMs)
+  }), dependencies);
 }
 
 async function explainMatch(result, userId, dependencies = {}) {
   const apiKey = dependencies.apiKey ?? config.geminiApiKey;
   if (!apiKey || !canUse(`explain:${userId}`)) return null;
   try {
-    const response = await withRetry(() => callGemini([{ role: 'user', parts: [{ text: `Viết một câu tiếng Việt ngắn giải thích vì sao ứng viên phù hợp công việc. Điểm: ${result.score}/100. Kỹ năng khớp: ${result.matchedSkills.map((item) => item.name).join(', ') || 'không có'}. Kỹ năng thiếu: ${result.missingSkills.map((item) => item.name).join(', ') || 'không có'}. Chỉ trả về câu giải thích, không bịa dữ liệu.` }] }]));
+    const response = await callGeminiWithRetry([{ role: 'user', parts: [{ text: `Viết một câu tiếng Việt ngắn giải thích vì sao ứng viên phù hợp công việc. Điểm: ${result.score}/100. Kỹ năng khớp: ${result.matchedSkills.map((item) => item.name).join(', ') || 'không có'}. Kỹ năng thiếu: ${result.missingSkills.map((item) => item.name).join(', ') || 'không có'}. Chỉ trả về câu giải thích, không bịa dữ liệu.` }] }], [], dependencies);
     return response?.candidates?.[0]?.content?.parts?.find((part) => part.text)?.text?.trim() || null;
   } catch (error) {
     return null;
@@ -134,7 +162,7 @@ function parseJsonResponse(response) {
   return JSON.parse(text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim());
 }
 
-async function extractResumeProfile(userId, text) {
+async function extractResumeProfile(userId, text, dependencies = {}) {
   if (!config.geminiApiKey) {
     const error = new Error('AI chưa được cấu hình. Vui lòng nhập hồ sơ thủ công.');
     error.statusCode = 503;
@@ -146,10 +174,10 @@ async function extractResumeProfile(userId, text) {
     throw error;
   }
   try {
-    const response = await withRetry(() => callGemini([{ role: 'user', parts: [{ text: `Trích xuất hồ sơ ứng viên từ CV dưới đây. Chỉ trả về JSON hợp lệ, không markdown, đúng schema:
+    const response = await callGeminiWithRetry([{ role: 'user', parts: [{ text: `Trích xuất hồ sơ ứng viên từ CV dưới đây. Chỉ trả về JSON hợp lệ, không markdown, đúng schema:
 {"headline":string|null,"skills":string[],"education":[{"school":string,"major":string|null,"degree":string|null,"fromDate":string|null,"toDate":string|null}],"experience":[{"company":string,"title":string,"description":string|null,"fromDate":string|null,"toDate":string|null,"isCurrent":boolean}],"projects":[{"name":string,"description":string|null,"link":string|null,"technologies":string[]}]}
 Không suy đoán thông tin không có trong CV; dùng null hoặc mảng rỗng. CV:
-${text}` }] }]));
+${redactText(text)}` }] }], [], dependencies);
     return resumeImportSchema.parse(parseJsonResponse(response));
   } catch (error) {
     if (error.statusCode) throw error;
@@ -161,7 +189,7 @@ ${text}` }] }]));
   }
 }
 
-async function generateJobDescription(userId, details) {
+async function generateJobDescription(userId, details, dependencies = {}) {
   if (!config.geminiApiKey) {
     const error = new Error('AI chưa được cấu hình. Vui lòng nhập mô tả thủ công.');
     error.statusCode = 503;
@@ -175,14 +203,14 @@ async function generateJobDescription(userId, details) {
   }
 
   try {
-    const response = await withRetry(() => callGemini([{ role: 'user', parts: [{ text: `Viết mô tả tuyển dụng bằng tiếng Việt, rõ ràng và không bịa thông tin. Dữ liệu: ${JSON.stringify(details)}. Chỉ trả về mô tả công việc.` }] }]));
+    const response = await callGeminiWithRetry([{ role: 'user', parts: [{ text: `Viết mô tả tuyển dụng bằng tiếng Việt, rõ ràng và không bịa thông tin. Dữ liệu: ${JSON.stringify(jobDescriptionInput(details))}. Chỉ trả về mô tả công việc.` }] }], [], dependencies);
     return response?.candidates?.[0]?.content?.parts?.find((part) => part.text)?.text?.trim() || null;
   } catch (error) {
     return null;
   }
 }
 
-async function analyzeResumeForJob(userId, resumeText, job, match) {
+async function analyzeResumeForJob(userId, resumeText, job, match, dependencies = {}) {
   if (!config.geminiApiKey) {
     const error = new Error('AI chưa được cấu hình. Vui lòng thử lại sau.');
     error.statusCode = 503;
@@ -200,9 +228,9 @@ fitScore phải bằng hoặc thấp hơn điểm matching được cung cấp. 
 Mô tả công việc:
 ${job.description}
 CV:
-${resumeText}`;
+${redactText(resumeText)}`;
   try {
-    const response = await withRetry(() => callGemini([{ role: 'user', parts: [{ text: prompt }] }]));
+    const response = await callGeminiWithRetry([{ role: 'user', parts: [{ text: prompt }] }], [], dependencies);
     const result = resumeJobAnalysisSchema.parse(parseJsonResponse(response));
     const allowedMissing = new Set(match.missingSkills.map((item) => item.name.toLowerCase()));
     return {
@@ -218,7 +246,7 @@ ${resumeText}`;
   }
 }
 
-async function chat({ userId, role, message, tools }) {
+async function chat({ userId, role, message, tools, dependencies = {} }) {
   if (!config.geminiApiKey) throw new Error('Dịch vụ AI chưa được cấu hình');
   if (!canUse(`chat:${userId}`)) {
     const error = new Error('Bạn đã vượt quá giới hạn yêu cầu AI trong giờ này');
@@ -227,8 +255,9 @@ async function chat({ userId, role, message, tools }) {
   }
   const declarations = tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters }));
   const contents = [{ role: 'user', parts: [{ text: `Bạn là trợ lý tuyển dụng. Vai trò người dùng: ${role}. Chỉ dùng dữ liệu từ các tool được cung cấp; không được bịa tin tuyển dụng hoặc ứng viên. Nếu cần dữ liệu, bắt buộc gọi tool. Câu hỏi: ${message}` }] }];
+  const consentRequirements = [];
   for (let turn = 0; turn < 3; turn += 1) {
-    const response = await withRetry(() => callGemini(contents, declarations));
+    const response = await callGeminiWithRetry(contents, declarations, { ...dependencies, consentRequirements });
     const parts = response?.candidates?.[0]?.content?.parts || [];
     const calls = parts.filter((part) => part.functionCall);
     if (!calls.length) return parts.find((part) => part.text)?.text || 'Không tìm thấy thông tin phù hợp.';
@@ -237,7 +266,9 @@ async function chat({ userId, role, message, tools }) {
       const tool = tools.find((item) => item.name === call.functionCall.name);
       if (!tool) throw new Error('AI yêu cầu tool không được phép');
       const result = await tool.execute(call.functionCall.args || {});
-      contents.push({ role: 'function', parts: [{ functionResponse: { name: tool.name, response: { result } } }] });
+      if (tool.consentRequirements) consentRequirements.push(...tool.consentRequirements(result));
+      const aiResult = tool.toAiResult ? tool.toAiResult(result) : result;
+      contents.push({ role: 'function', parts: [{ functionResponse: { name: tool.name, response: { result: aiResult } } }] });
     }
   }
   return 'Không thể hoàn tất truy vấn AI.';

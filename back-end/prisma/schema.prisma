@@ -163,6 +163,32 @@ enum AlertDeliveryStatus {
   UNKNOWN
 }
 
+enum AiConsentScope {
+  RESUME_IMPORT
+  RESUME_JOB_ANALYSIS
+  MATCHING_EXPLANATION
+  SEMANTIC_MATCHING
+  AI_CHAT
+  JOB_DESCRIPTION
+  RECRUITER_AI_DISCOVERY
+}
+
+enum AiUsageOutcome {
+  STARTED
+  SUCCEEDED
+  FAILED
+}
+
+enum AiPermitStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+  FAILED
+  TIMED_OUT_UNCONFIRMED
+  ORPHANED_UNCONFIRMED
+}
+
 model User {
   id                            Int                          @id @default(autoincrement())
   email                         String                       @unique @db.VarChar(191)
@@ -190,6 +216,13 @@ model User {
   reportsResolved               Report[]                     @relation("ReportResolver")
   verificationRequestsSubmitted CompanyVerificationRequest[] @relation("VerificationRequestSubmitter")
   verificationRequestsReviewed  CompanyVerificationRequest[] @relation("VerificationRequestReviewer")
+  aiConsents                    AiConsent[]
+  aiUsageEvents                 AiUsageEvent[]                 @relation("AiUsageActor")
+  aiSubjectUsageEvents          AiUsageEvent[]                 @relation("AiUsageSubject")
+  aiTransmissionPermits         AiTransmissionPermit[]         @relation("AiPermitActor")
+  aiPermitSubjects              AiPermitConsent[]              @relation("AiPermitSubject")
+  ownedEmbeddingArtifacts       EmbeddingCache[]               @relation("EmbeddingOwner")
+  subjectEmbeddingArtifacts     EmbeddingCache[]               @relation("EmbeddingSubject")
 
   @@map("users")
 }
@@ -582,9 +615,12 @@ model ResumeJobAnalysis {
   job             Job             @relation(fields: [jobId], references: [id], onDelete: Cascade)
   candidate       Candidate?      @relation(fields: [candidateId], references: [id])
   candidateId     Int?
+  aiConsentId     Int?            @map("ai_consent_id")
+  aiConsent       AiConsent?      @relation(fields: [aiConsentId], references: [id], onDelete: SetNull)
 
   @@unique([resumeId, jobId])
   @@index([jobId])
+  @@index([aiConsentId])
   @@map("resume_job_analyses")
 }
 
@@ -847,8 +883,118 @@ model EmbeddingCache {
   model       String   @db.VarChar(100)
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
+  ownerUserId Int?     @map("owner_user_id")
+  dataSubjectUserId Int? @map("data_subject_user_id")
+  aiConsentId Int?     @map("ai_consent_id")
+  consentScope AiConsentScope? @map("consent_scope")
+  owner       User?    @relation("EmbeddingOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  dataSubject User?    @relation("EmbeddingSubject", fields: [dataSubjectUserId], references: [id], onDelete: SetNull)
+  aiConsent   AiConsent? @relation(fields: [aiConsentId], references: [id], onDelete: SetNull)
 
+  @@index([ownerUserId])
+  @@index([dataSubjectUserId, consentScope])
+  @@index([aiConsentId])
   @@map("embedding_cache")
+}
+
+model AiConsent {
+  id            Int            @id @default(autoincrement())
+  userId        Int            @map("user_id")
+  scope         AiConsentScope
+  policyVersion String         @map("policy_version") @db.VarChar(40)
+  grantedAt     DateTime       @default(now()) @map("granted_at")
+  withdrawnAt   DateTime?      @map("withdrawn_at")
+  withdrawalRequestedAt DateTime? @map("withdrawal_requested_at")
+  withdrawalCompletedAt DateTime? @map("withdrawal_completed_at")
+  version       Int            @default(1)
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  usageEvents   AiUsageEvent[]
+  embeddings    EmbeddingCache[]
+  resumeJobAnalyses ResumeJobAnalysis[]
+  permitBindings AiPermitConsent[]
+
+  @@unique([userId, scope, policyVersion])
+  @@index([userId, withdrawnAt])
+  @@index([userId, withdrawalRequestedAt])
+  @@map("ai_consents")
+}
+
+model AiTransmissionPermit {
+  id                Int            @id @default(autoincrement())
+  requestId         String         @unique @map("request_id") @db.Char(36)
+  actorUserId       Int?           @map("actor_user_id")
+  scope             AiConsentScope
+  status            AiPermitStatus @default(PENDING)
+  provider          String         @db.VarChar(80)
+  model             String         @db.VarChar(100)
+  operation         String         @db.VarChar(80)
+  inputDigest       String         @map("input_digest") @db.Char(64)
+  deadlineAt        DateTime       @map("deadline_at")
+  activatedAt       DateTime?      @map("activated_at")
+  completedAt       DateTime?      @map("completed_at")
+  cancelRequestedAt DateTime?      @map("cancel_requested_at")
+  leaseOwner        String?        @map("lease_owner") @db.VarChar(100)
+  leaseToken        String?        @map("lease_token") @db.Char(36)
+  leaseExpiresAt    DateTime?      @map("lease_expires_at")
+  errorCode         String?        @map("error_code") @db.VarChar(80)
+  version           Int            @default(1)
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+  actor             User?          @relation("AiPermitActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  bindings          AiPermitConsent[]
+  usageEvent        AiUsageEvent?
+
+  @@index([status, deadlineAt])
+  @@index([actorUserId, createdAt])
+  @@map("ai_transmission_permits")
+}
+
+model AiPermitConsent {
+  id                Int                  @id @default(autoincrement())
+  permitId          Int                  @map("permit_id")
+  consentId         Int?                 @map("consent_id")
+  dataSubjectUserId Int?                 @map("data_subject_user_id")
+  scope             AiConsentScope
+  policyVersion     String               @map("policy_version") @db.VarChar(40)
+  consentVersion    Int                  @map("consent_version")
+  createdAt         DateTime             @default(now()) @map("created_at")
+  permit            AiTransmissionPermit @relation(fields: [permitId], references: [id], onDelete: Cascade)
+  consent           AiConsent?           @relation(fields: [consentId], references: [id], onDelete: SetNull)
+  dataSubject       User?                @relation("AiPermitSubject", fields: [dataSubjectUserId], references: [id], onDelete: SetNull)
+
+  @@unique([permitId, dataSubjectUserId, scope])
+  @@index([consentId])
+  @@index([dataSubjectUserId, scope])
+  @@map("ai_permit_consents")
+}
+
+model AiUsageEvent {
+  id                Int            @id @default(autoincrement())
+  actorUserId       Int?           @map("actor_user_id")
+  dataSubjectUserId Int?           @map("data_subject_user_id")
+  consentId         Int?           @map("consent_id")
+  permitId          Int?           @unique @map("permit_id")
+  scope             AiConsentScope
+  policyVersion     String         @map("policy_version") @db.VarChar(40)
+  provider          String         @db.VarChar(80)
+  model             String         @db.VarChar(100)
+  operation         String         @db.VarChar(80)
+  outcome           AiUsageOutcome @default(STARTED)
+  inputDigest       String         @map("input_digest") @db.Char(64)
+  errorCode         String?        @map("error_code") @db.VarChar(80)
+  createdAt         DateTime       @default(now()) @map("created_at")
+  completedAt       DateTime?      @map("completed_at")
+  actor             User?          @relation("AiUsageActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  dataSubject       User?          @relation("AiUsageSubject", fields: [dataSubjectUserId], references: [id], onDelete: SetNull)
+  consent           AiConsent?     @relation(fields: [consentId], references: [id], onDelete: SetNull)
+  permit            AiTransmissionPermit? @relation(fields: [permitId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId, createdAt])
+  @@index([dataSubjectUserId, scope, createdAt])
+  @@index([consentId])
+  @@map("ai_usage_events")
 }
 
 model Recommendation {

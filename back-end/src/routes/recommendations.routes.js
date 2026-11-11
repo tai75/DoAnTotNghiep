@@ -1,5 +1,6 @@
 const { z } = require('zod');
 const prisma = require('../config/prisma');
+const config = require('../config/env');
 const ApiError = require('../utils/apiError');
 const asyncHandler = require('../utils/asyncHandler');
 const { authenticate, authorize, requireActiveRecruiterCompany, requireVerifiedRecruiterCompany } = require('../middleware/auth');
@@ -7,6 +8,7 @@ const { calculateMatchScore, buildRuleExplanation } = require('../services/match
 const { explainMatch, chat } = require('../services/llm.service');
 const validate = require('../middleware/validate');
 const rateLimit = require('express-rate-limit');
+const { AI_POLICY_VERSION, activeConsents, executeWithConsent } = require('../services/aiConsent.service');
 
 const router = require('express').Router();
 const candidateQuery = z.object({ limit: z.coerce.number().int().min(1).max(50).default(10) });
@@ -41,9 +43,39 @@ async function getCandidate(userId) {
   return candidate;
 }
 
-async function saveScore(candidate, job, application, result, userId) {
+async function findAiDiscoverableCandidates({ recruiterUserId, companyId, query = '' }, client = prisma) {
+  await activeConsents([{ userId: recruiterUserId, scope: 'RECRUITER_AI_DISCOVERY' }], client);
+  const allowed = await client.aiConsent.findMany({
+    where: {
+      scope: 'RECRUITER_AI_DISCOVERY', policyVersion: AI_POLICY_VERSION,
+      withdrawnAt: null, withdrawalRequestedAt: null,
+      user: { candidate: { OR: [{ isSearchable: true }, { applications: { some: { job: { companyId } } } }] } }
+    },
+    select: { userId: true },
+    take: 100
+  });
+  const allowedUserIds = allowed.map((item) => item.userId);
+  if (!allowedUserIds.length) return [];
+  return client.candidate.findMany({
+    where: {
+      userId: { in: allowedUserIds },
+      OR: [{ isSearchable: true }, { applications: { some: { job: { companyId } } } }],
+      ...(query ? { AND: [{ OR: [{ headline: { contains: query } }, { desiredPosition: { contains: query } }] }] } : {})
+    },
+    select: { id: true, userId: true, headline: true, desiredPosition: true, yearsExperience: true },
+    take: 10
+  });
+}
+
+async function saveScore(candidate, job, application, result, userId, dataSubjectUserId = userId) {
   const explanation = buildRuleExplanation(result);
-  const llmExplanation = await explainMatch(result, userId);
+  let llmExplanation = null;
+  try {
+    if (!config.geminiApiKey) throw Object.assign(new Error('AI unavailable'), { code: 'ai_consent_required' });
+    llmExplanation = await executeWithConsent({ actorUserId: userId, dataSubjectUserId, scope: 'MATCHING_EXPLANATION', operation: 'matching-explanation', input: JSON.stringify({ score: result.score, matchedSkills: result.matchedSkills, missingSkills: result.missingSkills }) }, () => explainMatch(result, userId));
+  } catch (error) {
+    if (error?.code !== 'ai_consent_required') throw error;
+  }
   const finalExplanation = llmExplanation || explanation;
   const data = {
     candidateId: candidate.id, jobId: job.id, applicationId: application?.id || null, score: result.score,
@@ -85,7 +117,7 @@ router.get('/jobs/:jobId/candidates', authenticate, authorize('RECRUITER'), requ
   if (!job) throw new ApiError(404, 'Không tìm thấy việc làm thuộc công ty của bạn');
   const candidates = await prisma.candidate.findMany({
     where: { OR: [{ isSearchable: true }, { applications: { some: { jobId } } }] },
-    include: { skills: { include: { skill: true } }, user: { select: { fullName: true, email: true, phone: true } }, applications: { where: { jobId }, select: { id: true } } }
+    include: { skills: { include: { skill: true } }, user: { select: { id: true, fullName: true, email: true, phone: true } }, applications: { where: { jobId }, select: { id: true } } }
   });
   const requiredIds = filters.requiredSkillIds ? filters.requiredSkillIds.split(',').map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0) : [];
   const scoringJob = requiredIds.length ? { ...job, skills: job.skills.map((item) => ({ ...item, isRequired: requiredIds.includes(item.skillId) })) } : job;
@@ -93,7 +125,7 @@ router.get('/jobs/:jobId/candidates', authenticate, authorize('RECRUITER'), requ
   for (const candidate of candidates) {
     if (filters.minExperience !== undefined && (Number(candidate.yearsExperience) || 0) < filters.minExperience) continue;
     if (filters.location && !`${candidate.location || ''} ${candidate.desiredLocation || ''}`.toLocaleLowerCase().includes(filters.location.toLocaleLowerCase())) continue;
-    const result = await saveScore(candidate, job, candidate.applications[0], calculateMatchScore(candidate, scoringJob), req.user.id);
+    const result = await saveScore(candidate, job, candidate.applications[0], calculateMatchScore(candidate, scoringJob), req.user.id, candidate.user.id);
     const applied = Boolean(candidate.applications[0]);
     results.push({ candidateId: candidate.id, fullName: candidate.user.fullName, headline: candidate.headline, yearsExperience: candidate.yearsExperience, skills: candidate.skills, match: result, applied, contact: applied ? { email: candidate.user.email, phone: candidate.user.phone } : null });
   }
@@ -110,10 +142,19 @@ router.post('/chat', authenticate, authorize('CANDIDATE', 'RECRUITER'), requireA
     { name: 'searchJobs', description: 'Tìm tin tuyển dụng đã được đăng', parameters: { type: 'OBJECT', properties: { query: { type: 'STRING' } } }, execute: async ({ query = '' }) => prisma.job.findMany({ where: { status: 'PUBLISHED', OR: [{ title: { contains: query } }, { description: { contains: query } }] }, select: { id: true, title: true, location: true, company: { select: { name: true } } }, take: 10 }) },
     { name: 'getRecommendations', description: 'Lấy việc làm phù hợp cho ứng viên hiện tại', parameters: { type: 'OBJECT', properties: {} }, execute: async () => { const jobs = await prisma.job.findMany({ where: { status: 'PUBLISHED' }, include: { skills: { include: { skill: true } } }, take: 50 }); return jobs.map((job) => ({ id: job.id, title: job.title, score: calculateMatchScore(candidate, job).score })).sort((a, b) => b.score - a.score).slice(0, 10); } }
   ] : [
-    { name: 'searchCandidates', description: 'Tìm ứng viên searchable hoặc đã ứng tuyển vào công ty hiện tại', parameters: { type: 'OBJECT', properties: { query: { type: 'STRING' } } }, execute: async ({ query = '' }) => prisma.candidate.findMany({ where: { AND: [{ OR: [{ isSearchable: true }, { applications: { some: { job: { companyId: recruiter.companyId } } } }] }, ...(query ? [{ OR: [{ headline: { contains: query } }, { desiredPosition: { contains: query } }] }] : [])] }, select: { id: true, headline: true, desiredPosition: true, yearsExperience: true }, take: 10 }) }
+    { name: 'searchCandidates', description: 'Tìm ứng viên searchable hoặc đã ứng tuyển vào công ty hiện tại', parameters: { type: 'OBJECT', properties: { query: { type: 'STRING' } } }, execute: ({ query = '' }) => findAiDiscoverableCandidates({ recruiterUserId: req.user.id, companyId: recruiter.companyId, query }) }
   ];
+  if (req.user.role === 'RECRUITER') {
+    const searchCandidates = tools.find((tool) => tool.name === 'searchCandidates');
+    searchCandidates.consentRequirements = (result) => [
+      { userId: req.user.id, scope: 'RECRUITER_AI_DISCOVERY' },
+      ...result.map((candidate) => ({ userId: candidate.userId, scope: 'RECRUITER_AI_DISCOVERY' }))
+    ];
+    searchCandidates.toAiResult = (result) => result.map(({ userId, ...candidate }) => candidate);
+  }
   try {
-    res.json({ success: true, data: { message: await chat({ userId: req.user.id, role: req.user.role, message, tools }) } });
+    const reply = await executeWithConsent({ actorUserId: req.user.id, scope: 'AI_CHAT', operation: 'ai-chat', input: message }, () => chat({ userId: req.user.id, role: req.user.role, message, tools }));
+    res.json({ success: true, data: { message: reply } });
   } catch (error) {
     if (error.statusCode) throw new ApiError(error.statusCode, error.message);
     throw new ApiError(503, 'Không thể kết nối dịch vụ AI lúc này');
@@ -122,3 +163,4 @@ router.post('/chat', authenticate, authorize('CANDIDATE', 'RECRUITER'), requireA
 
 module.exports = router;
 module.exports.saveScore = saveScore;
+module.exports.findAiDiscoverableCandidates = findAiDiscoverableCandidates;

@@ -297,3 +297,9 @@ export const recommendationApi = {
   jobs: (limit = 20) => apiRequest(`/recommendations/jobs?limit=${limit}`),
   chat: (message) => apiRequest('/ai/chat', { method: 'POST', body: JSON.stringify({ message }) })
 }
+
+export const aiConsentApi = {
+  list: () => apiRequest('/ai/consents'),
+  grant: (scope) => apiRequest(`/ai/consents/${scope}`, { method: 'PUT' }),
+  withdraw: (scope) => apiRequest(`/ai/consents/${scope}`, { method: 'DELETE' })
+}

@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const config = require('../config/env');
+const { outboundAiRequest } = require('./aiConsent.service');
 
 const CACHE_KEY_VERSION = 'gemini-embedding-cache-v3';
 const PROVIDER = 'google-gemini-developer-api';
@@ -94,37 +95,49 @@ async function requestEmbedding(text, embeddingConfig, dependencies = {}) {
   if (!apiKey) throw new EmbeddingError('GEMINI_API_KEY chưa được cấu hình cho matching V3', { code: 'configuration' });
   const fetchImpl = dependencies.fetchImpl || global.fetch;
   const waitImpl = dependencies.waitImpl || wait;
+  const nowImpl = dependencies.nowImpl || Date.now;
+  const randomImpl = dependencies.randomImpl || Math.random;
+  const totalTimeoutMs = dependencies.totalTimeoutMs ?? config.aiRetryTotalTimeoutMs;
   if (typeof fetchImpl !== 'function') throw new EmbeddingError('Fetch API không khả dụng', { code: 'configuration' });
+  if (!Number.isFinite(totalTimeoutMs) || totalTimeoutMs <= 0) throw new EmbeddingError('Tổng timeout embedding phải lớn hơn 0', { code: 'configuration' });
+  const deadlineAt = nowImpl() + totalTimeoutMs;
   let lastError;
   for (let attempt = 0; attempt <= embeddingConfig.maxRetries; attempt += 1) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), embeddingConfig.timeoutMs);
+    const remainingMs = deadlineAt - nowImpl();
+    if (remainingMs <= 0) throw new EmbeddingError('Gemini embedding retry chain timeout', { code: 'total_timeout' });
     try {
-      const response = await fetchImpl(`https://generativelanguage.googleapis.com/${embeddingConfig.apiVersion}/models/${embeddingConfig.model}:embedContent`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-        body: JSON.stringify({
-          model: `models/${embeddingConfig.model}`,
-          content: { parts: [{ text: `${embeddingConfig.taskInstruction}${text}` }] },
-          embedContentConfig: {
-            outputDimensionality: embeddingConfig.outputDimensionality,
-            autoTruncate: embeddingConfig.autoTruncate
-          }
-        }),
-        signal: controller.signal
+      const attemptDeadline = Math.min(deadlineAt, nowImpl() + embeddingConfig.timeoutMs);
+      const payload = await outboundAiRequest(async ({ signal }) => {
+        const requestTimeoutMs = attemptDeadline - nowImpl();
+        if (requestTimeoutMs <= 0) throw new EmbeddingError('Gemini embedding retry chain timeout', { code: 'total_timeout' });
+        const response = await fetchImpl(`https://generativelanguage.googleapis.com/${embeddingConfig.apiVersion}/models/${embeddingConfig.model}:embedContent`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+          body: JSON.stringify({
+            model: `models/${embeddingConfig.model}`,
+            content: { parts: [{ text: `${embeddingConfig.taskInstruction}${text}` }] },
+            embedContentConfig: { outputDimensionality: embeddingConfig.outputDimensionality, autoTruncate: embeddingConfig.autoTruncate }
+          }),
+          signal
+        });
+        if (!response.ok) throw errorForStatus(response.status);
+        return response.json();
+      }, {
+        model: embeddingConfig.model, operation: 'semantic-matching-v3', input: text,
+        client: dependencies.client, semaphore: dependencies.semaphore,
+        deadlineAt: attemptDeadline, nowImpl
       });
-      if (!response.ok) throw errorForStatus(response.status);
-      const payload = await response.json();
       return validateEmbeddingVector(payload?.embedding?.values, embeddingConfig);
     } catch (error) {
       if (error?.name === 'AbortError') lastError = new EmbeddingError('Gemini embedding request timeout', { code: 'timeout', retryable: true });
+      else if (error?.statusCode) throw error;
       else if (error instanceof EmbeddingError) lastError = error;
       else lastError = new EmbeddingError('Không thể kết nối Gemini embedding', { code: 'network', retryable: true });
       if (!lastError.retryable || attempt === embeddingConfig.maxRetries) throw lastError;
-      const jitter = Math.floor(Math.random() * Math.max(1, embeddingConfig.retryBaseMs));
-      await waitImpl(embeddingConfig.retryBaseMs * (2 ** attempt) + jitter);
-    } finally {
-      clearTimeout(timer);
+      const jitter = Math.floor(randomImpl() * Math.max(1, embeddingConfig.retryBaseMs));
+      const delay = embeddingConfig.retryBaseMs * (2 ** attempt) + jitter;
+      if (delay >= deadlineAt - nowImpl()) throw new EmbeddingError('Gemini embedding retry chain timeout', { code: 'total_timeout' });
+      await waitImpl(delay);
     }
   }
   throw lastError;
@@ -133,7 +146,11 @@ async function requestEmbedding(text, embeddingConfig, dependencies = {}) {
 async function embeddingForV3(text, contentRole, prismaClient, dependencies = {}) {
   if (!prismaClient?.embeddingCache) throw new EmbeddingError('Prisma embedding cache không khả dụng', { code: 'configuration' });
   const embeddingConfig = dependencies.embeddingConfig || embeddingV3Config();
-  const { contentHash, inputFingerprint, identity } = buildEmbeddingCacheIdentity(text, contentRole, embeddingConfig);
+  const baseIdentity = buildEmbeddingCacheIdentity(text, contentRole, embeddingConfig);
+  const contentHash = dependencies.consent
+    ? sha256(`${baseIdentity.contentHash}:${dependencies.consent.id}:${dependencies.consent.version}:${dependencies.dataSubjectUserId || ''}`)
+    : baseIdentity.contentHash;
+  const { inputFingerprint, identity } = baseIdentity;
   const cached = await prismaClient.embeddingCache.findUnique({ where: { contentHash } });
   if (cached) {
     if (cached.model !== embeddingConfig.model) throw new EmbeddingError('Embedding cache không khớp model V3', { code: 'invalid_cache' });
@@ -142,8 +159,8 @@ async function embeddingForV3(text, contentRole, prismaClient, dependencies = {}
   const vector = await requestEmbedding(text, embeddingConfig, dependencies);
   await prismaClient.embeddingCache.upsert({
     where: { contentHash },
-    create: { contentHash, vector, model: embeddingConfig.model },
-    update: { vector, model: embeddingConfig.model }
+    create: { contentHash, vector, model: embeddingConfig.model, ...(dependencies.consent ? { ownerUserId: dependencies.actorUserId, dataSubjectUserId: dependencies.dataSubjectUserId, aiConsentId: dependencies.consent.id, consentScope: 'SEMANTIC_MATCHING' } : {}) },
+    update: { vector, model: embeddingConfig.model, ...(dependencies.consent ? { ownerUserId: dependencies.actorUserId, dataSubjectUserId: dependencies.dataSubjectUserId, aiConsentId: dependencies.consent.id, consentScope: 'SEMANTIC_MATCHING' } : {}) }
   });
   return { vector, cacheHit: false, contentHash, inputFingerprint, identity };
 }

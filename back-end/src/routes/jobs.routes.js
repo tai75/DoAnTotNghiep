@@ -10,6 +10,7 @@ const { generateJobDescription } = require('../services/llm.service');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const { createJobAtomic, updateJobAtomic } = require('../services/jobWrite.service');
+const { executeWithConsent } = require('../services/aiConsent.service');
 
 const employmentTypes = ['FULL_TIME', 'PART_TIME', 'INTERNSHIP', 'CONTRACT', 'REMOTE', 'HYBRID'];
 const employmentTypeSchema = z.enum(employmentTypes);
@@ -198,7 +199,7 @@ router.get('/:id/match/v2', authenticate, authorize('CANDIDATE'), requireMatchin
   ]);
   if (!candidate) throw new ApiError(404, 'Không tìm thấy hồ sơ ứng viên');
   if (!job) throw new ApiError(404, 'Không tìm thấy việc làm đang tuyển');
-  const result = await calculateWeightedV2(candidate, job, prisma);
+  const result = await executeWithConsent({ actorUserId: req.user.id, scope: 'SEMANTIC_MATCHING', operation: 'semantic-matching-v2', input: `${candidate.id}:${job.id}` }, ({ consent }) => calculateWeightedV2(candidate, job, prisma, { consent, actorUserId: req.user.id, dataSubjectUserId: req.user.id }));
   const score = await prisma.matchScoreV2.upsert({
     where: { candidateId_jobId: { candidateId: candidate.id, jobId: job.id } },
     create: { candidateId: candidate.id, jobId: job.id, score: result.score, skillScore: result.skillScore, experienceScore: result.experienceScore, positionScore: result.positionScore, locationScore: result.locationScore, salaryScore: result.salaryScore, employmentScore: result.employmentScore, semanticScore: result.semanticScore, matchedSkills: result.matchedSkills, missingSkills: result.missingSkills, computedAt: new Date(), algorithmVersion: result.algorithmVersion },
@@ -231,7 +232,18 @@ router.get('/:id/match', authenticate, authorize('CANDIDATE'), validate(jobIdSch
     where: { candidateId_jobId: { candidateId: candidate.id, jobId: job.id } },
     select: { explanation: true }
   });
-  const explanation = existing?.explanation || await explainMatch(result, req.user.id) || buildRuleExplanation(result);
+  let explanation = existing?.explanation;
+  if (!explanation) {
+    try {
+      explanation = await executeWithConsent({
+        actorUserId: req.user.id, scope: 'MATCHING_EXPLANATION', operation: 'matching-explanation',
+        input: JSON.stringify({ score: result.score, matchedSkills: result.matchedSkills, missingSkills: result.missingSkills })
+      }, () => explainMatch(result, req.user.id));
+    } catch (error) {
+      if (error?.code !== 'ai_consent_required') throw error;
+    }
+  }
+  explanation ||= buildRuleExplanation(result);
   const data = {
     candidateId: candidate.id,
     jobId: job.id,
@@ -361,7 +373,7 @@ router.post('/:id/submit', authenticate, authorize('RECRUITER'), requireActiveRe
 }));
 
 router.post('/ai-description', authenticate, authorize('RECRUITER'), requireActiveRecruiterCompany, aiRateLimit, validate(aiDescriptionSchema), asyncHandler(async (req, res) => {
-  const result = await generateJobDescription(req.user.id, req.body);
+  const result = await executeWithConsent({ actorUserId: req.user.id, scope: 'JOB_DESCRIPTION', operation: 'job-description', input: JSON.stringify(req.body) }, () => generateJobDescription(req.user.id, req.body));
   if (!result) throw new ApiError(503, 'AI chưa được cấu hình hoặc tạm thời không khả dụng');
   res.json({ success: true, data: { description: result } });
 }));

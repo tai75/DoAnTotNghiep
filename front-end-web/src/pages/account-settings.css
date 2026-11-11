@@ -16,10 +16,19 @@
 .account-card dt { color: var(--muted); font-size: 12px; }
 .account-card dd { margin: 0; overflow-wrap: anywhere; color: var(--blue-950); font-weight: 700; }
 .account-security { grid-column: 1 / -1; }
+.account-ai-consent { grid-column: 1 / -1; }
+.account-ai-consent > p { color: var(--muted); line-height: 1.55; }
+.consent-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+.account-card .consent-item { display: flex; align-items: flex-start; gap: 12px; border: 1px solid #dbe5ef; border-radius: 12px; padding: 14px; cursor: pointer; }
+.account-card .consent-item:focus-within { border-color: var(--blue-700); outline: 3px solid rgb(37 99 235 / 14%); }
+.account-card .consent-item input { flex: 0 0 auto; width: 20px; min-height: 20px; margin: 1px 0 0; }
+.consent-item span { display: grid; gap: 4px; }
+.consent-item small { color: var(--muted); font-weight: 500; line-height: 1.45; }
+.consent-item em { color: #9a3412; font-size: 12px; }
 .account-security form { max-width: 520px; }
 .account-message, .account-loading { max-width: 1068px; margin-bottom: 20px; border-radius: 10px; padding: 13px 16px; }
 .account-message.success { color: #166534; background: #dcfce7; }
 .account-message.error { color: #991b1b; background: #fee2e2; }
 .account-loading { border: 1px dashed #ccd9e6; color: var(--muted); background: white; }
-@media (max-width: 720px) { .account-settings-grid { grid-template-columns: 1fr; }.account-security { grid-column: auto; } }
+@media (max-width: 720px) { .account-settings-grid, .consent-list { grid-template-columns: 1fr; }.account-security, .account-ai-consent { grid-column: auto; } }
 @media (max-width: 480px) { .account-settings-page { padding: 28px 14px 90px; }.account-card { border-radius: 13px; padding: 18px 14px; }.account-card dl div { grid-template-columns: 1fr; gap: 4px; }.account-card button { width: 100%; } }

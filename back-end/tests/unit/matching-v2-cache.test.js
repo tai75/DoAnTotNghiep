@@ -10,6 +10,9 @@ const { calculateWeightedV2 } = await import('../../src/services/matching.servic
 const config = (await import('../../src/config/env.js')).default
 
 describe('matching V2 embedding cache', () => {
+  const { runWithAiPermit } = require('../helpers/aiPermitFake')
+  const permittedV2 = (candidateValue, jobValue, dependencies = {}) => runWithAiPermit('SEMANTIC_MATCHING',
+    () => calculateWeightedV2(candidateValue, jobValue, prisma, dependencies)).then(({ result }) => result)
   const cache = new Map()
   const prisma = {
     embeddingCache: {
@@ -50,9 +53,9 @@ describe('matching V2 embedding cache', () => {
   })
 
   it('reuses embeddings for unchanged content and creates a new cache key when job content changes', async () => {
-    const first = await calculateWeightedV2(candidate, job, prisma)
-    const second = await calculateWeightedV2(candidate, job, prisma)
-    const changed = await calculateWeightedV2(candidate, { ...job, description: 'Build Node.js APIs and event streams' }, prisma)
+    const first = await permittedV2(candidate, job)
+    const second = await permittedV2(candidate, job)
+    const changed = await permittedV2(candidate, { ...job, title: 'Senior Platform Engineer', description: 'Build Node.js APIs and event streams' })
 
     expect(first.algorithmVersion).toBe('weighted-v2')
     expect(first.semanticScore).toBe(100)
@@ -65,7 +68,7 @@ describe('matching V2 embedding cache', () => {
   })
 
   it('returns a finite weighted score when matchedSkills contains objects', async () => {
-    const result = await calculateWeightedV2(candidate, job, prisma)
+    const result = await permittedV2(candidate, job)
     const breakdown = [
       result.score, result.skillScore, result.experienceScore, result.positionScore,
       result.locationScore, result.salaryScore, result.employmentScore, result.semanticScore
@@ -78,7 +81,7 @@ describe('matching V2 embedding cache', () => {
   })
 
   it('returns a finite weighted score when missingSkills contains objects', async () => {
-    const result = await calculateWeightedV2({ ...candidate, skills: [] }, job, prisma)
+    const result = await permittedV2({ ...candidate, skills: [] }, job)
     const breakdown = [
       result.score, result.skillScore, result.experienceScore, result.positionScore,
       result.locationScore, result.salaryScore, result.employmentScore, result.semanticScore
@@ -90,9 +93,9 @@ describe('matching V2 embedding cache', () => {
   })
 
   it('accepts nullable optional collections without producing non-finite scores', async () => {
-    const result = await calculateWeightedV2({
+    const result = await permittedV2({
       ...candidate, skills: null, educations: null, experiences: undefined, projects: null
-    }, { ...job, skills: null, requiredYearsExperience: 0 }, prisma)
+    }, { ...job, skills: null, requiredYearsExperience: 0 })
 
     expect([
       result.score, result.skillScore, result.experienceScore, result.positionScore,
@@ -101,9 +104,22 @@ describe('matching V2 embedding cache', () => {
   })
 
   it('rejects an invalid cached vector instead of converting it to a zero score', async () => {
-    await calculateWeightedV2(candidate, job, prisma)
+    await permittedV2(candidate, job)
     for (const cached of cache.values()) cached.vector = [1, null]
 
-    await expect(calculateWeightedV2(candidate, job, prisma)).rejects.toThrow('mảng số hữu hạn')
+    await expect(permittedV2(candidate, job)).rejects.toThrow('mảng số hữu hạn')
+  })
+
+  it('aborts legacy V2 provider calls after a finite timeout', async () => {
+    const fetchImpl = vi.fn(async (_url, options) => new Promise((_resolve, reject) => {
+      options.signal.addEventListener('abort', () => {
+        const error = new Error('aborted')
+        error.name = 'AbortError'
+        reject(error)
+      })
+    }))
+
+    await expect(permittedV2(candidate, job, { versionEnabled: true, fetchImpl, timeoutMs: 5 })).rejects.toMatchObject({ code: 'timeout' })
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
   })
 })

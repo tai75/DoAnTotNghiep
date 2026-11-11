@@ -23,6 +23,7 @@ const conversationsRoutes = require('./routes/conversations.routes');
 const storageRoutes = require('./routes/storage.routes');
 const interviewsRoutes = require('./routes/interviews.routes');
 const reportsRoutes = require('./routes/reports.routes');
+const aiConsentRoutes = require('./routes/aiConsent.routes');
 
 const app = express();
 
@@ -85,6 +86,7 @@ app.use('/api/notifications', notificationsRoutes);
 app.use('/api/recruiters', recruitersRoutes);
 app.use('/api/recommendations', recommendationsRoutes);
 app.use('/api/ai', recommendationsRoutes);
+app.use('/api/ai', aiConsentRoutes);
 app.use('/api/conversations', conversationsRoutes);
 app.use('/api/interviews', interviewsRoutes);
 app.use('/api/reports', reportsRoutes);

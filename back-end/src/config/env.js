@@ -99,5 +99,17 @@ module.exports = {
   matchingV3Enabled: featureFlag('MATCHING_V3_ENABLED'),
   matchingV2Weights: process.env.MATCHING_V2_WEIGHTS,
   llmTimeoutMs: Number(process.env.LLM_TIMEOUT_MS || 8000),
+  aiRetryTotalTimeoutMs: Number(process.env.AI_RETRY_TOTAL_TIMEOUT_MS || 20000),
+  aiMaxConcurrent: Number(process.env.AI_MAX_CONCURRENT || 4),
+  aiMaxQueue: Number(process.env.AI_MAX_QUEUE || 20),
+  aiQueueTimeoutMs: Number(process.env.AI_QUEUE_TIMEOUT_MS || 2000),
+  aiDbMaxWaitMs: Number(process.env.AI_DB_MAX_WAIT_MS || 3000),
+  aiDispatchTransactionTimeoutMs: Number(process.env.AI_DISPATCH_TRANSACTION_TIMEOUT_MS || 5000),
+  aiPermitDeadlineMs: Number(process.env.AI_PERMIT_DEADLINE_MS || 25000),
+  aiPermitLeaseMs: Number(process.env.AI_PERMIT_LEASE_MS || 25000),
+  aiWithdrawalWaitMs: Number(process.env.AI_WITHDRAWAL_WAIT_MS || 3000),
+  aiWithdrawalPollMs: Number(process.env.AI_WITHDRAWAL_POLL_MS || 50),
+  aiShutdownWaitMs: Number(process.env.AI_SHUTDOWN_WAIT_MS || 2000),
+  aiOutboundProcessCount: Number(process.env.AI_OUTBOUND_PROCESS_COUNT || 1),
   trustProxy: process.env.TRUST_PROXY === 'true' ? 1 : false
 };

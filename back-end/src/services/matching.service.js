@@ -1,6 +1,8 @@
 const crypto = require('crypto');
 const config = require('../config/env');
 const { embeddingForV3, embeddingV3Config } = require('./embedding.service');
+const { semanticCandidateDocument, semanticJobDocument } = require('./aiRedaction.service');
+const { outboundAiRequest } = require('./aiConsent.service');
 
 const DEFAULT_WEIGHTS = Object.freeze({
   skill: 0.5,
@@ -204,15 +206,11 @@ function buildRuleExplanation(result) {
 }
 
 function profileText(candidate = {}) {
-  const skills = skillEntries(candidate.skills, 'candidate.skills').map((skill) => skill.name).join(', ');
-  const education = arrayValue(candidate.educations, 'candidate.educations').map((item) => `${item.school} ${item.major || ''} ${item.degree || ''}`).join('; ');
-  const experience = arrayValue(candidate.experiences, 'candidate.experiences').map((item) => `${item.title} ${item.company} ${item.description || ''}`).join('; ');
-  const projects = arrayValue(candidate.projects, 'candidate.projects').map((item, index) => `${item.name} ${item.description || ''} ${arrayValue(item.technologies, `candidate.projects[${index}].technologies`).join(' ')}`).join('; ');
-  return [candidate.headline, candidate.bio, candidate.desiredPosition, skills, education, experience, projects].filter(Boolean).join('\n');
+  return semanticCandidateDocument(candidate);
 }
 
 function jobText(job = {}) {
-  return [job.title, job.description, job.location, skillEntries(job.skills, 'job.skills').map((skill) => skill.name).join(', ')].filter(Boolean).join('\n');
+  return semanticJobDocument(job);
 }
 
 function cosineSimilarity(left, right) {
@@ -250,26 +248,49 @@ function validateEmbedding(vector) {
   return vector;
 }
 
-async function embeddingFor(text, prismaClient) {
+async function embeddingFor(text, prismaClient, dependencies = {}) {
   if (!config.geminiApiKey) throw new Error('GEMINI_API_KEY chưa được cấu hình cho matching-v2');
-  const contentHash = crypto.createHash('sha256').update(`${config.geminiEmbeddingModel}\n${text}`).digest('hex');
+  const hashInput = dependencies.consent
+    ? `${config.geminiEmbeddingModel}\n${dependencies.consent.id}:${dependencies.consent.version}:${dependencies.dataSubjectUserId || ''}\n${text}`
+    : `${config.geminiEmbeddingModel}\n${text}`;
+  const contentHash = crypto.createHash('sha256').update(hashInput).digest('hex');
   const cached = await prismaClient.embeddingCache.findUnique({ where: { contentHash } });
   if (cached) {
     if (cached.model && cached.model !== config.geminiEmbeddingModel) throw new Error('Embedding cache không khớp model hiện hành');
     return validateEmbedding(cached.vector);
   }
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${config.geminiEmbeddingModel}:embedContent?key=${encodeURIComponent(config.geminiApiKey)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: `models/${config.geminiEmbeddingModel}`, content: { parts: [{ text }] } })
-  });
-  if (!response.ok) throw new Error(`Gemini embedding request failed: ${response.status}`);
-  const payload = await response.json();
+  const fetchImpl = dependencies.fetchImpl || global.fetch;
+  const timeoutMs = dependencies.timeoutMs ?? config.geminiEmbeddingTimeoutMs;
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error('Gemini embedding timeout phai lon hon 0');
+  let payload;
+  try {
+    payload = await outboundAiRequest(async ({ signal }) => {
+      const response = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${config.geminiEmbeddingModel}:embedContent?key=${encodeURIComponent(config.geminiApiKey)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: `models/${config.geminiEmbeddingModel}`, content: { parts: [{ text }] } }),
+        signal
+      });
+      if (!response.ok) throw new Error(`Gemini embedding request failed: ${response.status}`);
+      return response.json();
+    }, {
+      model: config.geminiEmbeddingModel, operation: 'semantic-matching-v2', input: text,
+      client: dependencies.client, semaphore: dependencies.semaphore,
+      deadlineAt: Date.now() + timeoutMs
+    });
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      const timeout = new Error('Gemini embedding request timeout');
+      timeout.code = 'timeout';
+      throw timeout;
+    }
+    throw error;
+  }
   const vector = validateEmbedding(payload?.embedding?.values);
   await prismaClient.embeddingCache.upsert({
     where: { contentHash },
-    create: { contentHash, vector, model: config.geminiEmbeddingModel },
-    update: { vector, model: config.geminiEmbeddingModel }
+    create: { contentHash, vector, model: config.geminiEmbeddingModel, ...(dependencies.consent ? { ownerUserId: dependencies.actorUserId, dataSubjectUserId: dependencies.dataSubjectUserId, aiConsentId: dependencies.consent.id, consentScope: 'SEMANTIC_MATCHING' } : {}) },
+    update: { vector, model: config.geminiEmbeddingModel, ...(dependencies.consent ? { ownerUserId: dependencies.actorUserId, dataSubjectUserId: dependencies.dataSubjectUserId, aiConsentId: dependencies.consent.id, consentScope: 'SEMANTIC_MATCHING' } : {}) }
   });
   return vector;
 }
@@ -279,8 +300,8 @@ async function calculateWeightedV2(candidate, job, prismaClient, dependencies = 
   const weights = matchingV2Weights();
   const v1 = calculateMatchScore(candidate, job);
   const [candidateVector, jobVector] = await Promise.all([
-    embeddingFor(profileText(candidate), prismaClient),
-    embeddingFor(jobText(job), prismaClient)
+    embeddingFor(profileText(candidate), prismaClient, dependencies),
+    embeddingFor(jobText(job), prismaClient, dependencies)
   ]);
   const semanticScore = boundedScore(cosineSimilarity(candidateVector, jobVector) * 100, 'semanticScore');
   const score = weightedScore({

@@ -16,6 +16,8 @@ const {
 } = await import('../../src/services/llm.service.js')
 
 const contents = [{ role: 'user', parts: [{ text: 'synthetic test prompt' }] }]
+const { runWithAiPermit } = require('../helpers/aiPermitFake')
+const permitted = (callback, scope = 'AI_CHAT') => runWithAiPermit(scope, callback).then(({ result }) => result)
 
 describe('Gemini LLM reliability', () => {
   beforeEach(() => {
@@ -27,7 +29,7 @@ describe('Gemini LLM reliability', () => {
   it('uses the supported configured model and keeps the API key out of the URL', async () => {
     const fetchImpl = vi.fn(async () => ({ ok: true, json: async () => ({ candidates: [] }) }))
 
-    await callGemini(contents, [], { fetchImpl })
+    await permitted(() => callGemini(contents, [], { fetchImpl }))
 
     const [url, options] = fetchImpl.mock.calls[0]
     expect(url).toContain('/models/gemini-3.6-flash:generateContent')
@@ -53,7 +55,7 @@ describe('Gemini LLM reliability', () => {
   it('does not retry non-transient provider rejections', async () => {
     const fetchImpl = vi.fn(async () => ({ ok: false, status: 400 }))
 
-    await expect(withRetry(() => callGemini(contents, [], { fetchImpl }), { maxAttempts: 2, retryBaseMs: 0 }))
+    await expect(permitted(() => withRetry(() => callGemini(contents, [], { fetchImpl }), { maxAttempts: 2, retryBaseMs: 0 })))
       .rejects.toMatchObject({ code: 'provider_rejected', status: 400, retryable: false })
     expect(fetchImpl).toHaveBeenCalledOnce()
   })
@@ -62,9 +64,22 @@ describe('Gemini LLM reliability', () => {
     const fetchImpl = vi.fn(async () => ({ ok: false, status: 429 }))
     const waitImpl = vi.fn(async () => {})
 
-    await expect(withRetry(() => callGemini(contents, [], { fetchImpl }), { maxAttempts: 2, retryBaseMs: 0, waitImpl }))
+    await expect(permitted(() => withRetry(() => callGemini(contents, [], { fetchImpl }), { maxAttempts: 2, retryBaseMs: 0, waitImpl })))
       .rejects.toMatchObject({ code: 'quota_or_rate_limit', status: 429, retryable: true })
     expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(waitImpl).toHaveBeenCalledOnce()
+  })
+
+  it('enforces one finite deadline across retries and backoff', async () => {
+    const retryable = Object.assign(new Error('temporary'), { retryable: true })
+    const operation = vi.fn(async () => { throw retryable })
+    let now = 0
+    const waitImpl = vi.fn(async (ms) => { now += ms })
+
+    await expect(withRetry(operation, {
+      maxAttempts: 4, retryBaseMs: 6, totalTimeoutMs: 10, nowImpl: () => now, waitImpl
+    })).rejects.toMatchObject({ code: 'total_timeout', retryable: false })
+    expect(operation).toHaveBeenCalledTimes(2)
     expect(waitImpl).toHaveBeenCalledOnce()
   })
 
@@ -77,14 +92,14 @@ describe('Gemini LLM reliability', () => {
       })
     }))
 
-    await expect(callGemini(contents, [], { fetchImpl, timeoutMs: 5 }))
+    await expect(permitted(() => callGemini(contents, [], { fetchImpl, timeoutMs: 5 })))
       .rejects.toMatchObject({ code: 'timeout', retryable: true })
   })
 
   it('lets job creation continue manually when Gemini is unavailable', async () => {
     const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: false, status: 503 })
 
-    await expect(generateJobDescription('manual-fallback-user', { title: 'Synthetic role' })).resolves.toBeNull()
+    await expect(permitted(() => generateJobDescription('manual-fallback-user', { title: 'Synthetic role' }), 'JOB_DESCRIPTION')).resolves.toBeNull()
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
@@ -94,7 +109,7 @@ describe('Gemini LLM reliability', () => {
       json: async () => ({ candidates: [{ content: { parts: [{ text: '{not-valid-json' }] } }] })
     })
 
-    await expect(extractResumeProfile('invalid-json-user', 'synthetic resume'))
+    await expect(permitted(() => extractResumeProfile('invalid-json-user', 'synthetic resume'), 'RESUME_IMPORT'))
       .rejects.toMatchObject({ statusCode: 502 })
     expect(fetchMock).toHaveBeenCalledOnce()
   })

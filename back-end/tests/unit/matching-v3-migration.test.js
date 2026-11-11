@@ -21,6 +21,13 @@ const {
   requestEmbedding
 } = await import('../../src/services/embedding.service.js')
 const { ALGORITHM_V3, calculateWeightedV3 } = await import('../../src/services/matching.service.js')
+const { runWithAiPermit } = require('../helpers/aiPermitFake')
+const permittedV3 = (candidateValue, jobValue, prisma, dependencies = {}) => runWithAiPermit('SEMANTIC_MATCHING',
+  () => calculateWeightedV3(candidateValue, jobValue, prisma, dependencies)).then(({ result }) => result)
+const permittedEmbedding = (text, role, prisma, dependencies = {}) => runWithAiPermit('SEMANTIC_MATCHING',
+  () => embeddingForV3(text, role, prisma, dependencies)).then(({ result }) => result)
+const permittedRequest = (text, embeddingConfig, dependencies = {}) => runWithAiPermit('SEMANTIC_MATCHING',
+  () => requestEmbedding(text, embeddingConfig, dependencies)).then(({ result }) => result)
 
 function unitVector(size = 768, index = 0) {
   return Array.from({ length: size }, (_, position) => position === index ? 1 : 0)
@@ -77,8 +84,8 @@ describe('Gemini embedding V3 migration', () => {
     const prisma = createPrisma()
     const fetchImpl = vi.fn(async () => ({ ok: true, json: async () => ({ embedding: { values: unitVector() } }) }))
 
-    const first = await calculateWeightedV3(candidate, job, prisma, { fetchImpl })
-    const second = await calculateWeightedV3(candidate, job, prisma, { fetchImpl })
+    const first = await permittedV3(candidate, job, prisma, { fetchImpl })
+    const second = await permittedV3(candidate, job, prisma, { fetchImpl })
 
     expect(first.algorithmVersion).toBe(ALGORITHM_V3)
     expect(first.degraded).toBe(false)
@@ -116,7 +123,7 @@ describe('Gemini embedding V3 migration', () => {
     const prisma = createPrisma(cache)
     const fetchImpl = vi.fn(async () => ({ ok: true, json: async () => ({ embedding: { values: unitVector() } }) }))
 
-    const result = await embeddingForV3('same text', 'candidate-profile', prisma, { fetchImpl })
+    const result = await permittedEmbedding('same text', 'candidate-profile', prisma, { fetchImpl })
 
     expect(result.cacheHit).toBe(false)
     expect(fetchImpl).toHaveBeenCalledOnce()
@@ -131,7 +138,7 @@ describe('Gemini embedding V3 migration', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: { values: unitVector(128) } }) })
     const waitImpl = vi.fn(async () => {})
 
-    const vector = await requestEmbedding('retry me', embeddingConfig, { fetchImpl, waitImpl })
+    const vector = await permittedRequest('retry me', embeddingConfig, { fetchImpl, waitImpl })
 
     expect(vector).toHaveLength(128)
     expect(fetchImpl).toHaveBeenCalledTimes(2)
@@ -142,7 +149,7 @@ describe('Gemini embedding V3 migration', () => {
     const prisma = createPrisma()
     const fetchImpl = vi.fn(async () => ({ ok: false, status: 429 }))
 
-    const result = await calculateWeightedV3(candidate, job, prisma, { fetchImpl })
+    const result = await permittedV3(candidate, job, prisma, { fetchImpl })
 
     expect(result.degraded).toBe(true)
     expect(result.algorithmVersion).toBe('weighted-v1')
@@ -193,7 +200,7 @@ describe('Gemini embedding V3 migration', () => {
       })
     }))
 
-    const result = await calculateWeightedV3(candidate, job, prisma, { fetchImpl, embeddingConfig })
+    const result = await permittedV3(candidate, job, prisma, { fetchImpl, embeddingConfig })
 
     expect(result.degraded).toBe(true)
     expect(result.fallback.reason).toBe('timeout')
@@ -217,7 +224,7 @@ describe('Gemini embedding V3 migration', () => {
     invalidVector[10] = Number.NaN
     const fetchImpl = vi.fn(async () => ({ ok: true, json: async () => ({ embedding: { values: invalidVector } }) }))
 
-    const result = await calculateWeightedV3(candidate, job, prisma, { fetchImpl })
+    const result = await permittedV3(candidate, job, prisma, { fetchImpl })
 
     expect(result.degraded).toBe(true)
     expect(result.fallback.reason).toBe('invalid_embedding')
