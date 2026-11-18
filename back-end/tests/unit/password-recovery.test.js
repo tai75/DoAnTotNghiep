@@ -82,6 +82,7 @@ describe('password recovery timing and privacy envelope', () => {
         passwordResetToken: { updateMany },
         user: { update: vi.fn() },
         refreshToken: { updateMany: vi.fn() },
+        authSession: { updateMany: vi.fn() },
       })),
     }
     const times = [new Date('2026-11-11T06:00:00.900Z'), new Date('2026-11-11T06:00:01.100Z')]
@@ -93,5 +94,30 @@ describe('password recovery timing and privacy envelope', () => {
     expect(updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ expiresAt: { gt: new Date('2026-11-11T06:00:01.100Z') } }),
     }))
+  })
+
+  it('SESSION-06 globally revokes refresh tokens and auth sessions after password reset', async () => {
+    const now = new Date('2026-11-11T06:00:00.000Z')
+    const userUpdate = vi.fn()
+    const refreshUpdate = vi.fn()
+    const sessionUpdate = vi.fn()
+    const client = {
+      passwordResetToken: { findUnique: vi.fn(async () => ({ id: 1, userId: 7, usedAt: null, expiresAt: new Date(now.getTime() + 60_000) })) },
+      $transaction: vi.fn(async (work) => work({
+        passwordResetToken: { updateMany: vi.fn(async () => ({ count: 1 })) },
+        user: { update: userUpdate },
+        refreshToken: { updateMany: refreshUpdate },
+        authSession: { updateMany: sessionUpdate },
+      })),
+    }
+
+    await recovery.consumePasswordResetToken('synthetic-token', 'NewPassword123!', client, {
+      now,
+      hashPasswordImpl: async () => 'synthetic-password-hash',
+    })
+
+    expect(userUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ tokenVersion: { increment: 1 } }) }))
+    expect(refreshUpdate).toHaveBeenCalledWith({ where: { userId: 7, revokedAt: null }, data: { revokedAt: now } })
+    expect(sessionUpdate).toHaveBeenCalledWith({ where: { userId: 7, revokedAt: null }, data: { revokedAt: now } })
   })
 })

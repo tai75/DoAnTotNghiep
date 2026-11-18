@@ -172,6 +172,10 @@ async function consumePasswordResetToken(rawToken, password, client = prisma, de
       where: { userId: resetToken.userId, revokedAt: null },
       data: { revokedAt: claimedAt }
     });
+    await transaction.authSession.updateMany({
+      where: { userId: resetToken.userId, revokedAt: null },
+      data: { revokedAt: claimedAt }
+    });
   });
 }
 

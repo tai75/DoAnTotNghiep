@@ -11,8 +11,10 @@ test.describe('secure password recovery UI', () => {
     await page.goto('/login')
     await page.getByRole('link', { name: 'Quên mật khẩu?' }).click()
     await expect(page).toHaveURL(/\/forgot-password$/)
-    await page.getByLabel('Email').fill('unknown@example.test')
-    await page.getByRole('button', { name: 'Gửi hướng dẫn' }).click()
+    const recoveryPanel = page.locator('.recovery-panel')
+    await expect(recoveryPanel.getByRole('heading', { name: 'Quên mật khẩu?' })).toBeVisible()
+    await recoveryPanel.getByLabel('Email').fill('unknown@example.test')
+    await recoveryPanel.getByRole('button', { name: 'Gửi hướng dẫn' }).click()
     await expect(page.getByRole('alert')).toHaveText('Nếu email tồn tại, hướng dẫn đặt lại mật khẩu đã được gửi.')
 
     for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {

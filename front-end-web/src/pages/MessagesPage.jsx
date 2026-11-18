@@ -38,6 +38,7 @@ export default function MessagesPage() {
       await messagesApi.markRead(id)
       if (requestId !== messageRequestRef.current) return
       setConversations((items) => items.map((item) => item.id === id ? { ...item, unreadCount: 0 } : item))
+      window.dispatchEvent(new Event('messages-read'))
       setError('')
     } catch (requestError) {
       if (requestId === messageRequestRef.current) setError(requestError.message)
@@ -55,8 +56,14 @@ export default function MessagesPage() {
   useEffect(() => {
     if (!selected) return undefined
     let active = true
-    const timer = window.setInterval(() => messagesApi.messages(selected).then((items) => {
-      if (active) setMessages(items)
+    const timer = window.setInterval(() => messagesApi.messages(selected).then(async (items) => {
+      if (!active) return
+      setMessages(items)
+      await messagesApi.markRead(selected)
+      if (active) {
+        setConversations((current) => current.map((item) => item.id === selected ? { ...item, unreadCount: 0 } : item))
+        window.dispatchEvent(new Event('messages-read'))
+      }
     }).catch((requestError) => {
       if (active) setError(requestError.message)
     }), 5000)

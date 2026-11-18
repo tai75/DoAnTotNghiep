@@ -5,13 +5,13 @@ import request from 'supertest'
 import appModule from '../../src/app.js'
 import configModule from '../../src/config/env.js'
 import stateModule from '../../src/services/applicationState.service.js'
-import qaDatabase from '../../scripts/qa01-db.cjs'
+import e2eDatabase from '../../scripts/e2e-db.cjs'
 
-const enabled = process.env.RUN_APPLICATION_STATE_QA_TESTS === '1'
+const enabled = process.env.RUN_E2E_APPLICATION_STATE_TESTS === '1'
 const app = appModule.default || appModule
 const config = configModule.default || configModule
 const { applyApplicationTransition } = stateModule
-const { assertQaDatabase, resetBusinessData, seed } = qaDatabase
+const { assertCanonicalDatabase, resetBusinessData, seed } = e2eDatabase
 
 describe.skipIf(!enabled)('QA real MySQL application state', () => {
   let prisma
@@ -20,11 +20,11 @@ describe.skipIf(!enabled)('QA real MySQL application state', () => {
   let fixture
 
   beforeAll(async () => {
-    prisma = new PrismaClient({ datasourceUrl: process.env.QA01_DATABASE_URL })
-    connectionA = new PrismaClient({ datasourceUrl: process.env.QA01_DATABASE_URL })
-    connectionB = new PrismaClient({ datasourceUrl: process.env.QA01_DATABASE_URL })
+    prisma = new PrismaClient({ datasourceUrl: process.env.E2E_DATABASE_URL })
+    connectionA = new PrismaClient({ datasourceUrl: process.env.E2E_DATABASE_URL })
+    connectionB = new PrismaClient({ datasourceUrl: process.env.E2E_DATABASE_URL })
     globalThis.__JOB_CONNECT_TEST_PRISMA__ = prisma
-    await Promise.all([assertQaDatabase(prisma), assertQaDatabase(connectionA), assertQaDatabase(connectionB)])
+    await Promise.all([assertCanonicalDatabase(prisma), assertCanonicalDatabase(connectionA), assertCanonicalDatabase(connectionB)])
   }, 30_000)
 
   beforeEach(async () => {

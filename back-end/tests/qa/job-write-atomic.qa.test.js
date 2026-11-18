@@ -1,11 +1,11 @@
 import { beforeAll, afterAll, describe, expect, it } from 'vitest'
 import { PrismaClient } from '@prisma/client'
 import jobWriteService from '../../src/services/jobWrite.service.js'
-import qaDatabase from '../../scripts/qa01-db.cjs'
+import e2eDatabase from '../../scripts/e2e-db.cjs'
 
-const enabled = process.env.RUN_QA_DB_TESTS === '1'
+const enabled = process.env.RUN_E2E_JOB_WRITE_TESTS === '1'
 const { createJobAtomic, updateJobAtomic } = jobWriteService
-const { assertQaDatabase, resetBusinessData, seed } = qaDatabase
+const { assertCanonicalDatabase, resetBusinessData, seed } = e2eDatabase
 
 function withInjectedFailure(prisma, modelName, methodName) {
   return {
@@ -30,8 +30,8 @@ describe.skipIf(!enabled)('QA database atomic job writes', () => {
   let skillIds
 
   beforeAll(async () => {
-    prisma = new PrismaClient({ datasourceUrl: process.env.QA01_DATABASE_URL })
-    await assertQaDatabase(prisma)
+    prisma = new PrismaClient({ datasourceUrl: process.env.E2E_DATABASE_URL })
+    await assertCanonicalDatabase(prisma)
     await resetBusinessData(prisma)
     fixture = await seed(prisma)
     skillIds = (await prisma.skill.findMany({ orderBy: { id: 'asc' }, take: 3 })).map((skill) => skill.id)

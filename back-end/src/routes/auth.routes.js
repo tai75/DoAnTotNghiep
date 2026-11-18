@@ -85,8 +85,8 @@ const passwordResetSchema = z.object({
   query: z.object({})
 });
 
-function createToken(user) {
-  return jwt.sign({ userId: user.id, role: user.role, tokenVersion: user.tokenVersion }, config.jwtSecret, {
+function createToken(user, sessionId) {
+  return jwt.sign({ userId: user.id, role: user.role, tokenVersion: user.tokenVersion, sid: sessionId }, config.jwtSecret, {
     algorithm: 'HS256',
     expiresIn: config.jwtExpiresIn,
     issuer: config.jwtIssuer,
@@ -140,31 +140,58 @@ function clearRefreshCookie(res) {
   res.clearCookie(config.refreshCookieName, options);
 }
 
+function isRetryableTransactionError(error) {
+  return error?.code === 'P2034' || /deadlock|write conflict/i.test(error?.message || '');
+}
+
+async function runSerializable(database, work, maxAttempts = 3) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await database.$transaction(work, { isolationLevel: 'Serializable' });
+    } catch (error) {
+      if (!isRetryableTransactionError(error) || attempt === maxAttempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, attempt * 5));
+    }
+  }
+  throw new Error('Serializable transaction retry exhausted');
+}
+
 async function createSession(user, res, database = prisma) {
   const refreshToken = crypto.randomBytes(48).toString('base64url');
-  await database.refreshToken.create({
-    data: {
-      userId: user.id,
-      tokenHash: hashToken(refreshToken),
-      expiresAt: new Date(Date.now() + durationToMs(config.refreshTokenExpiresIn))
-    }
+  const sessionId = crypto.randomUUID();
+  const expiresAt = new Date(Date.now() + durationToMs(config.refreshTokenExpiresIn));
+  await runSerializable(database, async (transaction) => {
+    await transaction.authSession.create({ data: { id: sessionId, userId: user.id, expiresAt } });
+    await transaction.refreshToken.create({
+      data: { userId: user.id, sessionId, tokenHash: hashToken(refreshToken), expiresAt }
+    });
   });
   setRefreshCookie(res, refreshToken);
-  return createToken(user);
+  return createToken(user, sessionId);
 }
 
 async function rotateRefreshToken(rawToken, database = prisma, now = new Date()) {
   const tokenHash = hashToken(rawToken);
-  return database.$transaction(async (transaction) => {
-    const stored = await transaction.refreshToken.findUnique({ where: { tokenHash }, include: { user: true } });
+  return runSerializable(database, async (transaction) => {
+    const stored = await transaction.refreshToken.findUnique({
+      where: { tokenHash },
+      include: { user: true, session: true }
+    });
     if (!stored) return { status: 'invalid' };
+    if (!stored.sessionId || !stored.session || stored.session.userId !== stored.userId) return { status: 'legacy' };
 
     if (stored.revokedAt) {
-      await transaction.refreshToken.updateMany({ where: { userId: stored.userId, revokedAt: null }, data: { revokedAt: now } });
-      await transaction.user.update({ where: { id: stored.userId }, data: { tokenVersion: { increment: 1 } } });
+      await transaction.authSession.updateMany({
+        where: { id: stored.sessionId, userId: stored.userId, revokedAt: null },
+        data: { revokedAt: now }
+      });
+      await transaction.refreshToken.updateMany({
+        where: { sessionId: stored.sessionId, revokedAt: null },
+        data: { revokedAt: now }
+      });
       return { status: 'replay' };
     }
-    if (stored.expiresAt <= now || stored.user.status !== 'ACTIVE') {
+    if (stored.expiresAt <= now || stored.session.expiresAt <= now || stored.session.revokedAt || stored.user.status !== 'ACTIVE') {
       await transaction.refreshToken.updateMany({ where: { id: stored.id, revokedAt: null }, data: { revokedAt: now } });
       return { status: 'invalid' };
     }
@@ -174,45 +201,50 @@ async function rotateRefreshToken(rawToken, database = prisma, now = new Date())
       data: { revokedAt: now }
     });
     if (claimed.count !== 1) {
-      await transaction.refreshToken.updateMany({ where: { userId: stored.userId, revokedAt: null }, data: { revokedAt: now } });
-      await transaction.user.update({ where: { id: stored.userId }, data: { tokenVersion: { increment: 1 } } });
+      await transaction.authSession.updateMany({
+        where: { id: stored.sessionId, userId: stored.userId, revokedAt: null },
+        data: { revokedAt: now }
+      });
+      await transaction.refreshToken.updateMany({
+        where: { sessionId: stored.sessionId, revokedAt: null },
+        data: { revokedAt: now }
+      });
       return { status: 'replay' };
     }
 
     const nextToken = crypto.randomBytes(48).toString('base64url');
+    const expiresAt = new Date(now.getTime() + durationToMs(config.refreshTokenExpiresIn));
+    const extended = await transaction.authSession.updateMany({
+      where: { id: stored.sessionId, userId: stored.userId, revokedAt: null, expiresAt: { gt: now } },
+      data: { expiresAt }
+    });
+    if (extended.count !== 1) return { status: 'invalid' };
     await transaction.refreshToken.create({
       data: {
         userId: stored.userId,
+        sessionId: stored.sessionId,
         tokenHash: hashToken(nextToken),
-        expiresAt: new Date(now.getTime() + durationToMs(config.refreshTokenExpiresIn))
+        expiresAt
       }
     });
-    return { status: 'ok', user: stored.user, refreshToken: nextToken };
+    return { status: 'ok', user: stored.user, sessionId: stored.sessionId, refreshToken: nextToken };
   });
 }
 
 async function revokeRefreshSession(rawToken, database = prisma, now = new Date()) {
   if (!rawToken) return { status: 'missing' };
   const tokenHash = hashToken(rawToken);
-  return database.$transaction(async (transaction) => {
+  return runSerializable(database, async (transaction) => {
     const stored = await transaction.refreshToken.findUnique({ where: { tokenHash } });
     if (!stored) return { status: 'invalid' };
-    if (stored.revokedAt) return { status: 'revoked' };
-
-    const claimed = await transaction.refreshToken.updateMany({
-      where: { id: stored.id, revokedAt: null },
+    if (!stored.sessionId) return { status: 'legacy' };
+    await transaction.authSession.updateMany({
+      where: { id: stored.sessionId, userId: stored.userId, revokedAt: null },
       data: { revokedAt: now }
     });
-    if (claimed.count !== 1) return { status: 'revoked' };
-    if (stored.expiresAt <= now) return { status: 'expired' };
-
     await transaction.refreshToken.updateMany({
-      where: { userId: stored.userId, revokedAt: null },
+      where: { sessionId: stored.sessionId, revokedAt: null },
       data: { revokedAt: now }
-    });
-    await transaction.user.update({
-      where: { id: stored.userId },
-      data: { tokenVersion: { increment: 1 } }
     });
     return { status: 'revoked' };
   });
@@ -276,7 +308,7 @@ router.post('/refresh', refreshRateLimit, asyncHandler(async (req, res) => {
     throw new ApiError(401, 'Refresh token không hợp lệ hoặc đã hết hạn');
   }
   setRefreshCookie(res, result.refreshToken);
-  res.json({ success: true, data: { user: publicUser(result.user), token: createToken(result.user) } });
+  res.json({ success: true, data: { user: publicUser(result.user), token: createToken(result.user, result.sessionId) } });
 }));
 
 router.post('/password-reset/request', passwordResetRequestRateLimit, validate(passwordResetRequestSchema), asyncHandler(async (req, res) => {
@@ -318,7 +350,8 @@ router.patch('/me/password', authenticate, validate(changePasswordSchema), async
   const passwordHash = await bcrypt.hash(req.body.newPassword, 12);
   await prisma.$transaction([
     prisma.user.update({ where: { id: req.user.id }, data: { passwordHash, tokenVersion: { increment: 1 } } }),
-    prisma.refreshToken.updateMany({ where: { userId: req.user.id, revokedAt: null }, data: { revokedAt: new Date() } })
+    prisma.refreshToken.updateMany({ where: { userId: req.user.id, revokedAt: null }, data: { revokedAt: new Date() } }),
+    prisma.authSession.updateMany({ where: { userId: req.user.id, revokedAt: null }, data: { revokedAt: new Date() } })
   ]);
   clearRefreshCookie(res);
   res.json({ success: true, message: 'Đổi mật khẩu thành công, vui lòng đăng nhập lại' });
@@ -334,7 +367,12 @@ router.post('/logout', asyncHandler(async (req, res) => {
 module.exports = router;
 module.exports.authRateLimit = authRateLimit;
 module.exports.passwordResetRequestRateLimit = passwordResetRequestRateLimit;
+module.exports.refreshRateLimit = refreshRateLimit;
 module.exports.durationToMs = durationToMs;
 module.exports.refreshCookieOptions = refreshCookieOptions;
+module.exports.createSession = createSession;
+module.exports.createToken = createToken;
+module.exports.isRetryableTransactionError = isRetryableTransactionError;
+module.exports.runSerializable = runSerializable;
 module.exports.rotateRefreshToken = rotateRefreshToken;
 module.exports.revokeRefreshSession = revokeRefreshSession;

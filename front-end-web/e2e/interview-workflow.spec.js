@@ -1,8 +1,9 @@
 import { expect, request, test } from '@playwright/test'
 import crypto from 'node:crypto'
+import { disposableEnvironment } from './support/disposable-env'
 
-const apiBase = 'http://127.0.0.1:5101'
-const password = process.env.QA01_PASSWORD
+const { apiBaseURL: apiBase, password } = disposableEnvironment()
+const disposableJobTitle = 'Kỹ sư phần mềm kiểm thử'
 
 async function apiLogin(email) {
   const context = await request.newContext({ baseURL: apiBase })
@@ -25,12 +26,12 @@ async function browserLogin(page, email) {
 test('two-role interview scheduling, notification, confirmation and responsive detail', async ({ browser }) => {
   const candidate = await apiLogin('candidate@jobconnect.local')
   const recruiter = await apiLogin('recruiter@jobconnect.local')
-  const jobs = await data(await candidate.context.get('/api/jobs?search=QA-01+Existing+Backend+Engineer', { headers: auth(candidate.token) }))
-  const job = jobs.items.find((item) => item.title === 'QA-01 Existing Backend Engineer')
+  const jobs = await data(await candidate.context.get(`/api/jobs?search=${encodeURIComponent(disposableJobTitle)}`, { headers: auth(candidate.token) }))
+  const job = jobs.items.find((item) => item.title === disposableJobTitle)
   expect(job).toBeTruthy()
   const profile = await data(await candidate.context.get('/api/candidates/me', { headers: auth(candidate.token) }))
-  const application = await data(await candidate.context.post(`/api/applications/jobs/${job.id}`, { headers: auth(candidate.token), data: { resumeId: profile.resumes[0].id, coverLetter: 'QA interview E2E application' } }))
-  const interviewResponse = await recruiter.context.post('/api/interviews/recruiter', { headers: auth(recruiter.token), data: { applicationId: application.id, requestKey: crypto.randomUUID(), scheduledStart: '2030-08-10T09:00:00+07:00', scheduledEnd: '2030-08-10T10:00:00+07:00', timezone: 'Asia/Ho_Chi_Minh', mode: 'ONLINE', meetingUrl: 'https://meet.example.test/interview-e2e', candidateInstructions: 'Chuẩn bị môi trường coding.' } })
+  const application = await data(await candidate.context.post(`/api/applications/jobs/${job.id}`, { headers: auth(candidate.token), data: { resumeId: profile.resumes[0].id, coverLetter: 'Ứng tuyển vị trí phỏng vấn kiểm thử.' } }))
+  const interviewResponse = await recruiter.context.post('/api/interviews/recruiter', { headers: auth(recruiter.token), data: { applicationId: application.id, requestKey: crypto.randomUUID(), scheduledStart: '2030-08-10T09:00:00+07:00', scheduledEnd: '2030-08-10T10:00:00+07:00', timezone: 'Asia/Ho_Chi_Minh', mode: 'ONLINE', meetingUrl: 'https://meet.example.test/interview-e2e', candidateInstructions: 'Chuẩn bị môi trường lập trình.' } })
   expect(interviewResponse.status()).toBe(201)
   const interview = await data(interviewResponse)
 

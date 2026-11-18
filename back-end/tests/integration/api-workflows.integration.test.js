@@ -21,7 +21,7 @@ process.env.UPLOADS_DIRECTORY = uploadDirectory
 const database = vi.hoisted(() => {
   const methodNames = ['findUnique', 'findFirst', 'findMany', 'create', 'createMany', 'update', 'updateMany', 'delete', 'deleteMany', 'upsert', 'count']
   const modelNames = [
-    'user', 'candidate', 'recruiter', 'company', 'refreshToken', 'passwordResetToken',
+    'user', 'candidate', 'recruiter', 'company', 'authSession', 'refreshToken', 'passwordResetToken',
     'job', 'jobScreeningQuestion', 'jobView', 'application', 'applicationAnswer',
     'applicationStatusHistory', 'applicationNote', 'matchScore', 'matchScoreV2',
     'embeddingCache', 'notification', 'companyFollow', 'auditLog', 'conversation', 'recommendation',
@@ -33,7 +33,7 @@ const database = vi.hoisted(() => {
   ]))
   prisma.$transaction = vi.fn()
   prisma.$queryRaw = vi.fn()
-  return { prisma, state: { users: [], refreshTokens: [], resetTokens: [], reports: [], nextUserId: 10, nextRefreshId: 1, nextResetId: 1, nextReportId: 1 } }
+  return { prisma, state: { users: [], authSessions: [], refreshTokens: [], resetTokens: [], reports: [], nextUserId: 10, nextRefreshId: 1, nextResetId: 1, nextReportId: 1 } }
 })
 
 const mail = vi.hoisted(() => ({ sendEmail: vi.fn() }))
@@ -48,8 +48,10 @@ const storageModule = await import('../../src/storage/localStorage.js')
 const storage = storageModule.default || storageModule
 
 function tokenFor(user) {
+  const sessionId = `test-session-${user.id}-${database.state.authSessions.length + 1}`
+  database.state.authSessions.push({ id: sessionId, userId: user.id, expiresAt: new Date(Date.now() + 60_000), revokedAt: null })
   return jwt.sign(
-    { userId: user.id, role: user.role, tokenVersion: user.tokenVersion },
+    { userId: user.id, role: user.role, tokenVersion: user.tokenVersion, sid: sessionId },
     process.env.JWT_SECRET,
     { algorithm: 'HS256', expiresIn: '15m', issuer: 'job-connect-api', audience: 'job-connect-web', subject: String(user.id) }
   )
@@ -116,6 +118,7 @@ function resetDatabase() {
     { id: 3, email: 'admin@example.test', fullName: 'Admin', role: 'ADMIN', status: 'ACTIVE', tokenVersion: 0 },
     { id: 4, email: 'other@example.test', fullName: 'Other candidate', role: 'CANDIDATE', status: 'ACTIVE', tokenVersion: 0 }
   ]
+  state.authSessions = []
   state.refreshTokens = []
   state.resetTokens = []
   state.reports = []
@@ -147,6 +150,26 @@ function resetDatabase() {
   prisma.company.create.mockImplementation(async ({ data }) => ({ id: 50, ...data }))
   prisma.recruiter.create.mockImplementation(async ({ data }) => ({ id: 60, ...data }))
   prisma.recruiter.findUnique.mockResolvedValue({ id: 60, userId: 2, companyId: 50, company: { status: 'ACTIVE', verificationStatus: 'VERIFIED' } })
+  prisma.authSession.create.mockImplementation(async ({ data }) => {
+    const item = { revokedAt: null, ...data }
+    state.authSessions.push(item)
+    return item
+  })
+  prisma.authSession.findUnique.mockImplementation(async ({ where, include }) => {
+    const item = state.authSessions.find((entry) => entry.id === where.id) || null
+    if (!item || !include?.user) return item
+    return { ...item, user: state.users.find((entry) => entry.id === item.userId) }
+  })
+  prisma.authSession.updateMany.mockImplementation(async ({ where, data }) => {
+    const matches = state.authSessions.filter((entry) =>
+      (where.id === undefined || entry.id === where.id) &&
+      (where.userId === undefined || entry.userId === where.userId) &&
+      (where.revokedAt === undefined || entry.revokedAt === where.revokedAt) &&
+      (!where.expiresAt?.gt || entry.expiresAt > where.expiresAt.gt)
+    )
+    matches.forEach((entry) => Object.assign(entry, data))
+    return { count: matches.length }
+  })
   prisma.refreshToken.create.mockImplementation(async ({ data }) => {
     const item = { id: state.nextRefreshId++, revokedAt: null, ...data }
     state.refreshTokens.push(item)
@@ -155,12 +178,17 @@ function resetDatabase() {
   prisma.refreshToken.findUnique.mockImplementation(async ({ where, include }) => {
     const item = state.refreshTokens.find((entry) => entry.tokenHash === where.tokenHash) || null
     if (!item || !include?.user) return item
-    return { ...item, user: state.users.find((user) => user.id === item.userId) }
+    return {
+      ...item,
+      user: state.users.find((user) => user.id === item.userId),
+      ...(include.session ? { session: state.authSessions.find((session) => session.id === item.sessionId) || null } : {})
+    }
   })
   prisma.refreshToken.updateMany.mockImplementation(async ({ where, data }) => {
     const matches = state.refreshTokens.filter((entry) =>
       (where.id === undefined || entry.id === where.id) &&
       (where.userId === undefined || entry.userId === where.userId) &&
+      (where.sessionId === undefined || entry.sessionId === where.sessionId) &&
       (where.revokedAt === undefined || entry.revokedAt === where.revokedAt) &&
       (!where.expiresAt?.gt || entry.expiresAt > where.expiresAt.gt)
     )
@@ -206,6 +234,8 @@ describe('authentication integration workflow', () => {
     expect(registration.status).toBe(201)
     expect(registration.body.data.user).not.toHaveProperty('passwordHash')
     expect(cookieValue(registration)).toContain('job_connect_refresh=')
+    const firstSessionCookie = cookieValue(registration)
+    const firstAccessToken = registration.body.data.token
 
     const login = await request(app).post('/api/auth/login').send({ email: 'new@example.test', password: 'Password123!' })
     expect(login.status).toBe(200)
@@ -220,23 +250,30 @@ describe('authentication integration workflow', () => {
       .set('Cookie', cookieValue(refresh))
     expect(logout.status).toBe(200)
     const rejected = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${refresh.body.data.token}`)
+    const firstAccessStillWorks = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${firstAccessToken}`)
+    const firstRefreshStillWorks = await request(app).post('/api/auth/refresh').set('Cookie', firstSessionCookie)
     expect(rejected.status).toBe(401)
+    expect(firstAccessStillWorks.status).toBe(200)
+    expect(firstRefreshStillWorks.status).toBe(200)
   }, 15_000)
 
   it('revokes the refresh session with an expired access token and permits a later login', async () => {
     const candidate = database.state.users[0]
     candidate.passwordHash = await bcrypt.hash('Password123!', 4)
     const rawRefreshToken = 'refresh-token-issued-before-suspension-test'
+    const sessionId = 'expired-access-session'
+    database.state.authSessions.push({ id: sessionId, userId: candidate.id, expiresAt: new Date(Date.now() + 60_000), revokedAt: null })
     database.state.refreshTokens.push({
       id: database.state.nextRefreshId++,
       userId: candidate.id,
+      sessionId,
       tokenHash: crypto.createHash('sha256').update(rawRefreshToken).digest('hex'),
       expiresAt: new Date(Date.now() + 60_000),
       revokedAt: null
     })
     const refreshCookie = `job_connect_refresh=${rawRefreshToken}`
     const expiredAccessToken = jwt.sign(
-      { userId: candidate.id, role: candidate.role, tokenVersion: candidate.tokenVersion },
+      { userId: candidate.id, role: candidate.role, tokenVersion: candidate.tokenVersion, sid: sessionId },
       process.env.JWT_SECRET,
       { algorithm: 'HS256', expiresIn: -1, issuer: 'job-connect-api', audience: 'job-connect-web', subject: String(candidate.id) }
     )
@@ -252,7 +289,7 @@ describe('authentication integration workflow', () => {
     expect(logout.status).toBe(200)
     expect(cookieValue(logout)).toContain('job_connect_refresh=')
     expect(repeatedLogout.status).toBe(200)
-    expect(tokenVersionAfterRepeatedLogout).toBe(1)
+    expect(tokenVersionAfterRepeatedLogout).toBe(0)
     expect(rejectedRefresh.status).toBe(401)
     expect(nextLogin.status).toBe(200)
   })
@@ -296,6 +333,7 @@ describe('authentication integration workflow', () => {
     expect(wrong.status).toBe(400)
     expect(changed.status).toBe(200)
     expect(database.prisma.refreshToken.updateMany).toHaveBeenCalledWith({ where: { userId: candidate.id, revokedAt: null }, data: { revokedAt: expect.any(Date) } })
+    expect(database.prisma.authSession.updateMany).toHaveBeenCalledWith({ where: { userId: candidate.id, revokedAt: null }, data: { revokedAt: expect.any(Date) } })
     expect(rejected.status).toBe(401)
   })
 })
@@ -992,6 +1030,14 @@ describe('application and ownership workflows', () => {
     expect(response.status).toBe(200)
     expect(response.body.data.status).toBe('REVIEWING')
     expect(database.prisma.applicationStatusHistory.create).toHaveBeenCalledOnce()
+    expect(database.prisma.notification.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        content: 'Đơn ứng tuyển vị trí Owned job đã chuyển sang trạng thái Đang xem xét.'
+      })
+    }))
+    expect(mail.sendEmail).toHaveBeenCalledWith(expect.objectContaining({
+      text: expect.stringContaining('trạng thái Đang xem xét.')
+    }))
     expect(mail.sendEmail).toHaveBeenCalledOnce()
   })
 
@@ -1152,6 +1198,32 @@ describe('application and ownership workflows', () => {
 })
 
 describe('admin moderation and conversations', () => {
+  it('returns the complete unread count for each conversation while selecting only the latest message', async () => {
+    const candidate = database.state.users[0]
+    database.prisma.conversation.findMany.mockResolvedValue([{
+      id: 70,
+      applicationId: 45,
+      application: {
+        job: { id: 25, title: 'Unread count job', companyId: 30 },
+        candidate: { user: { id: candidate.id, fullName: candidate.fullName } }
+      },
+      messages: [{ id: 73, senderUserId: 2, content: 'Latest message', readAt: null }],
+      _count: { messages: 3 }
+    }])
+
+    const response = await request(app).get('/api/conversations')
+      .set('Authorization', `Bearer ${tokenFor(candidate)}`)
+
+    expect(response.status).toBe(200)
+    expect(response.body.data[0].unreadCount).toBe(3)
+    expect(database.prisma.conversation.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      include: expect.objectContaining({
+        messages: { orderBy: { createdAt: 'desc' }, take: 1 },
+        _count: { select: { messages: { where: { readAt: null, senderUserId: { not: candidate.id } } } } }
+      })
+    }))
+  })
+
   it.each([10, 50])('serializes %i simultaneous reports for the same reporter and target', async (requestCount) => {
     const candidate = database.state.users[0]
     installSerializedReportStore()

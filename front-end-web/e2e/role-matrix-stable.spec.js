@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { authStatePath, disposableEnvironment } from './support/disposable-env'
 
 const roles = {
-  candidate: { path: '/profile', heading: 'Demo Candidate', sidebar: '.app-mobile-drawer', drawerName: 'Mở menu điều hướng' },
+  candidate: { path: '/profile', heading: 'Ứng viên kiểm thử', sidebar: '.app-mobile-drawer', drawerName: 'Mở menu điều hướng' },
   recruiter: { path: '/recruiter', heading: 'Tổng quan', sidebar: '.recruiter-sidebar', drawerName: 'Mở menu quản trị' },
   admin: { path: '/admin', heading: 'Tổng quan hệ thống', sidebar: '.admin-sidebar', drawerName: 'Mở menu quản trị' },
 }
@@ -23,13 +24,13 @@ for (const [role, definition] of Object.entries(roles)) {
   test(`${role}: stable authenticated viewport matrix`, async ({ browser }, testInfo) => {
     test.skip(testInfo.project.name !== 'desktop-1440', 'Matrix is executed once; viewport changes happen inside one authenticated context.')
     const context = await browser.newContext({
-      storageState: path.resolve('.auth', `${role}.json`),
+      storageState: authStatePath(role),
       viewport: { width: 375, height: 812 },
       hasTouch: true,
       locale: 'vi-VN',
     })
     const page = await context.newPage()
-    const directory = path.resolve('e2e-artifacts', 'role-matrix', role)
+    const directory = path.join(disposableEnvironment().artifactsRoot, 'role-matrix', role)
     await fs.mkdir(directory, { recursive: true })
     const results = []
 
@@ -87,7 +88,7 @@ for (const [role, definition] of Object.entries(roles)) {
 
     // Refresh tokens rotate during session restoration. Persist the current
     // cookie so the next serial test does not replay the revoked setup cookie.
-    await context.storageState({ path: path.resolve('.auth', `${role}.json`) })
+    await context.storageState({ path: authStatePath(role) })
     await context.close()
     await fs.writeFile(path.join(directory, 'matrix-results.json'), JSON.stringify(results, null, 2), 'utf8')
 

@@ -1,27 +1,28 @@
 import { expect, test } from '@playwright/test'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { authStatePath, disposableEnvironment } from './support/disposable-env'
 
-const fixturePrefix = 'QA-E2E-20261104'
-const jobTitle = `${fixturePrefix}-FULLSTACK-R2`
-const artifactDir = path.resolve('e2e-artifacts', 'business-lifecycle')
+const fixturePrefix = 'QA-03B1'
+const jobTitle = `${fixturePrefix} Kỹ sư phần mềm`
+const artifactDir = path.join(disposableEnvironment().artifactsRoot, 'business-lifecycle')
 
 async function roleContext(browser, role) {
   return browser.newContext({
-    storageState: path.resolve('.auth', `${role}.json`),
+    storageState: authStatePath(role),
     viewport: { width: 1440, height: 900 },
     locale: 'vi-VN',
   })
 }
 
 async function persistAndClose(context, role) {
-  await context.storageState({ path: path.resolve('.auth', `${role}.json`) })
+  await context.storageState({ path: authStatePath(role) })
   await context.close()
 }
 
 test('identified development fixture: recruiter → admin → candidate → pipeline/messages', async ({ browser }, testInfo) => {
   test.setTimeout(180_000)
-  test.skip(testInfo.project.name !== 'desktop-1440', 'The business lifecycle runs once; responsive shells are covered by the viewport matrix.')
+  test.skip(testInfo.project.name !== 'disposable-business-lifecycle', 'The business lifecycle runs once in its ordered disposable project.')
   await fs.mkdir(artifactDir, { recursive: true })
   const evidence = { fixturePrefix, jobTitle, steps: [] }
 
@@ -119,7 +120,7 @@ test('identified development fixture: recruiter → admin → candidate → pipe
     evidence.steps.push({ case: 'candidate-apply-with-existing-cv', status: 'PASS', httpStatus: applicationResponse.status() })
   }
   await page.goto('/profile')
-  await expect(page.getByRole('heading', { name: 'Demo Candidate' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Ứng viên kiểm thử' })).toBeVisible()
   await page.getByRole('button', { name: 'CV', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'CV của bạn' })).toBeVisible()
   await expect(page.locator('.resource-item')).toHaveCount(1)
@@ -138,7 +139,7 @@ test('identified development fixture: recruiter → admin → candidate → pipe
   page = await context.newPage()
   await page.goto('/recruiter')
   await page.locator('.recruiter-sidebar').getByRole('button', { name: 'Ứng viên' }).click()
-  const applicationRow = page.getByRole('row').filter({ hasText: jobTitle }).filter({ hasText: 'Demo Candidate' })
+  const applicationRow = page.getByRole('row').filter({ hasText: jobTitle }).filter({ hasText: 'Ứng viên kiểm thử' })
   await expect(applicationRow).toBeVisible()
   await applicationRow.getByRole('button', { name: 'Xem hồ sơ' }).click()
   await page.locator('#application-status').selectOption('REVIEWING')
@@ -152,8 +153,8 @@ test('identified development fixture: recruiter → admin → candidate → pipe
   const managedJobRow = page.getByRole('row').filter({ hasText: jobTitle })
   await managedJobRow.getByRole('button', { name: 'Pipeline' }).click()
   await expect(page.getByRole('heading', { name: `Pipeline · ${jobTitle}` })).toBeVisible()
-  await expect(page.locator('.pipeline-card').filter({ hasText: 'Demo Candidate' })).toBeVisible()
-  await page.locator('.pipeline-card').filter({ hasText: 'Demo Candidate' }).dispatchEvent('click')
+  await expect(page.locator('.pipeline-card').filter({ hasText: 'Ứng viên kiểm thử' })).toBeVisible()
+  await page.locator('.pipeline-card').filter({ hasText: 'Ứng viên kiểm thử' }).dispatchEvent('click')
   await expect(page.getByRole('button', { name: 'Nhắn tin ứng viên' })).toBeVisible()
   const conversationCreated = page.waitForResponse((response) => /\/api\/conversations\/applications\/\d+$/.test(response.url()) && response.request().method() === 'POST')
   await page.getByRole('button', { name: 'Nhắn tin ứng viên' }).click()

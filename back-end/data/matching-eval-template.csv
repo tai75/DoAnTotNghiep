@@ -1,0 +1,1 @@
+snapshot_id,pair_id,candidate_ref,job_ref,candidate_profile,job_profile,evaluator_1_id,relevance_1,labeled_at_1,evaluator_2_id,relevance_2,labeled_at_2,adjudicator_id,final_relevance,adjudicated_at,rubric_version,notes

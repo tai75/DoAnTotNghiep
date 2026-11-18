@@ -1,7 +1,7 @@
 import { expect, request, test } from '@playwright/test'
+import { disposableEnvironment } from './support/disposable-env'
 
-const apiBase = 'http://127.0.0.1:5101'
-const password = process.env.QA01_PASSWORD
+const { apiBaseURL: apiBase, password } = disposableEnvironment()
 
 async function login(page, email) {
   await page.goto('/login')

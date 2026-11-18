@@ -1,0 +1,100 @@
+.public-footer {
+  background: #101c32;
+  color: #dbe7f5;
+  font-family: var(--font-family);
+  font-size: var(--type-navigation);
+  line-height: 1.6;
+}
+
+.public-footer-inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) repeat(2, minmax(0, 1fr));
+  column-gap: clamp(2rem, 5vw, 5rem);
+  row-gap: 2.5rem;
+  max-width: 1220px;
+  margin-inline: auto;
+  padding: 3.5rem 1.25rem 1.5rem;
+}
+
+.public-footer-intro,
+.public-footer-group { min-inline-size: 0; }
+
+.footer-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #fff;
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.35;
+  text-decoration: none;
+}
+
+.footer-brand span {
+  display: grid;
+  place-items: center;
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  border-radius: 0.75rem;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.public-footer-intro p {
+  max-inline-size: 23rem;
+  margin: 1.25rem 0 0;
+  color: #c3d2e5;
+  overflow-wrap: anywhere;
+}
+
+.public-footer-group h2 {
+  margin: 0 0 1rem;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.public-footer-group ul { display: grid; gap: 0.125rem; margin: 0; padding: 0; list-style: none; }
+.public-footer-group li { min-inline-size: 0; }
+.public-footer-group a {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 2.75rem;
+  max-inline-size: 100%;
+  color: #dbe7f5;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.public-footer-group a:hover { color: #fff; text-decoration: underline; text-underline-offset: 0.25rem; }
+.public-footer a:focus-visible { outline: 3px solid #93c5fd; outline-offset: 4px; border-radius: 0.25rem; }
+
+.public-footer-bottom {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem 1.5rem;
+  border-top: 1px solid #40526b;
+  padding-top: 1.25rem;
+  color: #c3d2e5;
+}
+.public-footer-bottom p { margin: 0; }
+
+@media (max-width: 900px) {
+  .public-footer-inner { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .public-footer-intro { grid-column: 1 / -1; }
+}
+
+@media (max-width: 620px) {
+  .public-footer-inner {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 2rem;
+    padding: 3rem 1.25rem calc(8.5rem + env(safe-area-inset-bottom));
+  }
+  .public-footer-intro { grid-column: auto; }
+  .public-footer-group { max-inline-size: calc(100% - 4.5rem); }
+  .public-footer-bottom { grid-column: auto; display: grid; gap: 0.25rem; }
+}

@@ -1,0 +1,18 @@
+{
+  "phase": "verify",
+  "results": [
+    {
+      "phase": "verify",
+      "scenario": "loading",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    }
+  ]
+}

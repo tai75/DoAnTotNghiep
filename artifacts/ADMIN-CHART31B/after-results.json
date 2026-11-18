@@ -1,0 +1,395 @@
+{
+  "phase": "after",
+  "results": [
+    {
+      "phase": "after",
+      "scenario": "empty",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-empty-360x800-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "valid",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-valid-360x800-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "zero",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-zero-360x800-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "missing",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-missing-360x800-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "error500",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-error500-360x800-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "loading",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-loading-360x800-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "empty",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-empty-390x844-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "valid",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-valid-390x844-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "zero",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-zero-390x844-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "missing",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-missing-390x844-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "error500",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-error500-390x844-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "loading",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-loading-390x844-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "empty",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 768,
+        "height": 1024
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-empty-768x1024-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "valid",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 768,
+        "height": 1024
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-valid-768x1024-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "zero",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 768,
+        "height": 1024
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-zero-768x1024-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "missing",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 768,
+        "height": 1024
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-missing-768x1024-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "error500",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 768,
+        "height": 1024
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-error500-768x1024-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "loading",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 768,
+        "height": 1024
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-loading-768x1024-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "empty",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-empty-1024x768-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "valid",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-valid-1024x768-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "zero",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-zero-1024x768-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "missing",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-missing-1024x768-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "error500",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-error500-1024x768-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "loading",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-loading-1024x768-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "empty",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-empty-1440x900-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "valid",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-valid-1440x900-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "zero",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-zero-1440x900-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "missing",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-missing-1440x900-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "error500",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-error500-1440x900-AFTER.png"
+    },
+    {
+      "phase": "after",
+      "scenario": "loading",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "file": "after/admin-overview-loading-1440x900-AFTER.png"
+    }
+  ]
+}

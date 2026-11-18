@@ -5,12 +5,12 @@ import jwt from 'jsonwebtoken'
 import request from 'supertest'
 import appModule from '../../src/app.js'
 import configModule from '../../src/config/env.js'
-import qaDatabase from '../../scripts/qa01-db.cjs'
+import e2eDatabase from '../../scripts/e2e-db.cjs'
 
-const enabled = process.env.RUN_INTERVIEW_QA_TESTS === '1'
+const enabled = process.env.RUN_E2E_INTERVIEW_TESTS === '1'
 const app = appModule.default || appModule
 const config = configModule.default || configModule
-const { assertQaDatabase, resetBusinessData, seed } = qaDatabase
+const { assertCanonicalDatabase, resetBusinessData, seed } = e2eDatabase
 
 describe.skipIf(!enabled)('QA real MySQL interview workflow', () => {
   let prisma, fixture, application, recruiterAuth, candidateAuth
@@ -21,9 +21,9 @@ describe.skipIf(!enabled)('QA real MySQL interview workflow', () => {
   const schedule = (requestKey = crypto.randomUUID()) => ({ applicationId: application.id, requestKey, scheduledStart: '2030-05-01T09:00:00+07:00', scheduledEnd: '2030-05-01T10:00:00+07:00', timezone: 'Asia/Ho_Chi_Minh', mode: 'ONLINE', meetingUrl: 'https://meet.example.test/qa-room', candidateInstructions: 'Synthetic QA interview.', recruiterNote: 'Private recruiter note' })
 
   beforeAll(async () => {
-    prisma = new PrismaClient({ datasourceUrl: process.env.QA01_DATABASE_URL })
+    prisma = new PrismaClient({ datasourceUrl: process.env.E2E_DATABASE_URL })
     globalThis.__JOB_CONNECT_TEST_PRISMA__ = prisma
-    await assertQaDatabase(prisma)
+    await assertCanonicalDatabase(prisma)
   }, 30_000)
   beforeEach(async () => {
     await resetBusinessData(prisma); fixture = await seed(prisma)
@@ -63,11 +63,25 @@ describe.skipIf(!enabled)('QA real MySQL interview workflow', () => {
     const created = await request(app).post('/api/interviews/recruiter').set(recruiterAuth).send(schedule())
     const foreignCandidateUser = await prisma.user.create({ data: { email: 'interview-foreign-candidate@jobconnect.local', passwordHash: 'not-used', fullName: 'Foreign Candidate', role: 'CANDIDATE' } })
     await prisma.candidate.create({ data: { userId: foreignCandidateUser.id } })
-    const foreignCompany = await prisma.company.create({ data: { name: 'Interview Foreign Company' } })
+    const foreignCompany = await prisma.company.create({ data: { name: 'Interview Foreign Company', verificationStatus: 'VERIFIED' } })
     const foreignRecruiterUser = await prisma.user.create({ data: { email: 'interview-foreign-recruiter@jobconnect.local', passwordHash: 'not-used', fullName: 'Foreign Recruiter', role: 'RECRUITER' } })
-    await prisma.recruiter.create({ data: { userId: foreignRecruiterUser.id, companyId: foreignCompany.id } })
+    const foreignRecruiter = await prisma.recruiter.create({ data: { userId: foreignRecruiterUser.id, companyId: foreignCompany.id } })
+    const unverifiedCompany = await prisma.company.create({ data: { name: 'Interview Unverified Company', verificationStatus: 'UNVERIFIED' } })
+    const unverifiedRecruiterUser = await prisma.user.create({ data: { email: 'interview-unverified-recruiter@jobconnect.local', passwordHash: 'not-used', fullName: 'Unverified Recruiter', role: 'RECRUITER' } })
+    await prisma.recruiter.create({ data: { userId: unverifiedRecruiterUser.id, companyId: unverifiedCompany.id } })
+    expect(foreignCompany).toMatchObject({ verificationStatus: 'VERIFIED' })
+    expect(foreignCompany.id).not.toBe(fixture.companyId)
+    expect(foreignRecruiter.companyId).toBe(foreignCompany.id)
+    expect(foreignRecruiterUser.status).toBe('ACTIVE')
+    expect(created.body.data.application.job.companyId).toBe(fixture.companyId)
     expect((await request(app).get(`/api/interviews/candidate/${created.body.data.id}`).set('Authorization', `Bearer ${token(foreignCandidateUser)}`)).status).toBe(404)
-    expect((await request(app).get(`/api/interviews/recruiter/${created.body.data.id}`).set('Authorization', `Bearer ${token(foreignRecruiterUser)}`)).status).toBe(404)
+    const foreignResponse = await request(app).get(`/api/interviews/recruiter/${created.body.data.id}`).set('Authorization', `Bearer ${token(foreignRecruiterUser)}`)
+    expect(foreignResponse.status).toBe(404)
+    expect(foreignResponse.body).not.toHaveProperty('data')
+    const unverifiedResponse = await request(app).get(`/api/interviews/recruiter/${created.body.data.id}`).set('Authorization', `Bearer ${token(unverifiedRecruiterUser)}`)
+    expect(unverifiedResponse.status).toBe(403)
+    expect(unverifiedResponse.body.details).toMatchObject({ code: 'COMPANY_VERIFICATION_REQUIRED', verificationStatus: 'UNVERIFIED' })
+    expect(unverifiedResponse.body).not.toHaveProperty('data')
     expect((await request(app).get(`/api/interviews/recruiter/${created.body.data.id}`).set(candidateAuth)).status).toBe(403)
   })
 

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/auth'
 import useDocumentMeta from '../hooks/useDocumentMeta'
+import { getPostAuthDestination } from '../routes/authRedirect'
 
 const ASSET_URL = (import.meta.env.VITE_ASSET_URL || '').replace(/\/$/, '')
 const REFERENCE_IMAGE = `${ASSET_URL}/assets/-9ogxV-jue_gO6hLkt8wUrR9p_ZjF5bSU3RFoSMRneSqPNpxW794iOooyOy-udg2rhlmOFUOAfo4ImX_3lDKJrabmkbVvZRtxQcJaFUOr7Ht0MBTdC8o60DJmA23heR5PSPT2MfLrYAXwt3RkQr2EeCjVEsf-kExiKLZsfkaMEHep_SD6k-mXaaVxuGWfLxv.jpg`
@@ -44,9 +45,9 @@ export default function AuthPage() {
       ? { ...form, phone: form.phone || undefined, companyName: form.role === 'RECRUITER' ? form.companyName : undefined }
       : { email: form.email, password: form.password }
     try {
-      await login(payload, isRegister)
+      const user = await login(payload, isRegister)
       const returnTo = new URLSearchParams(location.search).get('returnTo')
-      navigate(returnTo && returnTo.startsWith('/') ? returnTo : '/jobs', { replace: true })
+      navigate(getPostAuthDestination(user.role, returnTo), { replace: true })
     } catch (error) {
       setMessage({ type: 'error', text: error.message })
     } finally {

@@ -6,7 +6,7 @@
 .app-search { align-items: center; background: #f1f5f9; border-radius: var(--radius-sm); color: var(--color-muted); display: flex; gap: 8px; max-width: 280px; padding: 8px 12px; width: 100%; }
 .app-search input { background: transparent; border: 0; color: var(--color-ink); min-width: 0; outline: 0; width: 100%; }
 .app-nav { display: flex; gap: 4px; margin-left: auto; }
-.app-nav a { align-items: center; border-bottom: 2px solid transparent; color: var(--color-muted); display: flex; gap: 6px; padding: 21px 12px; text-decoration: none; }
+.app-nav a { align-items: center; border-bottom: 2px solid transparent; color: var(--color-muted); display: flex; font-size: var(--type-navigation); gap: 6px; padding: 21px 12px; text-decoration: none; }
 .app-nav a:hover, .app-nav a.active { border-color: var(--color-primary); color: var(--color-primary-strong); }
 .app-actions { align-items: center; display: flex; gap: 12px; }
 .app-register-link { background: var(--color-primary); border-radius: var(--radius-sm); color: #fff; font-weight: 700; padding: 10px 14px; text-decoration: none; white-space: nowrap; }
@@ -90,10 +90,11 @@
   .notification-layer { bottom: calc(140px + env(safe-area-inset-bottom)); left: 0; position: fixed; right: 0; top: 0; z-index: 55; }
   .notification-overlay { background: rgb(15 23 42 / 45%); }
   .app-notification-popover { border: 0; border-radius: 18px 18px 0 0; bottom: calc(140px + env(safe-area-inset-bottom)); max-height: calc(100dvh - 216px); position: fixed; right: 0; top: auto; width: 100%; }
-  .app-content { padding-bottom: 72px; }
-  .app-mobile-nav { align-items: center; background: #fff; border-top: 1px solid var(--color-border); bottom: 0; display: flex; justify-content: space-around; left: 0; padding: 7px 8px calc(7px + env(safe-area-inset-bottom)); position: fixed; right: 0; z-index: 10; }
-  .app-mobile-nav a, .app-mobile-nav button { align-items: center; background: none; border: 0; color: var(--color-muted); display: flex; flex-direction: column; font: inherit; font-size: 11px; gap: 3px; justify-content: center; min-height: 48px; min-width: 48px; padding: 3px 8px; text-decoration: none; }
+  .app-content { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+  .app-mobile-nav { align-items: center; background: #fff; border-top: 1px solid var(--color-border); bottom: 0; display: flex; justify-content: space-around; left: 0; padding: 7px 4px calc(7px + env(safe-area-inset-bottom)); position: fixed; right: 0; z-index: 10; }
+  .app-mobile-nav a, .app-mobile-nav button { align-items: center; background: none; border: 0; color: var(--color-muted); display: flex; flex: 1 1 0; flex-direction: column; font: inherit; font-size: 12px; gap: 3px; justify-content: center; min-height: 48px; min-width: 44px; padding: 3px 0; text-decoration: none; white-space: nowrap; }
   .app-mobile-nav a.active, .app-mobile-nav button:hover { color: var(--color-primary-strong); }
+  .app-shell:has(input:focus, textarea:focus, select:focus) .app-mobile-nav { display: none; }
 }
 @media (max-width: 480px) {
   .app-register-link { display: none; }

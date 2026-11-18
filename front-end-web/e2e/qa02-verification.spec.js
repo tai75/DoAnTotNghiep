@@ -1,9 +1,9 @@
 import crypto from 'node:crypto'
 import { expect, request, test } from '@playwright/test'
+import { disposableAccounts, disposableEnvironment } from './support/disposable-env'
 
-const apiBase = 'http://127.0.0.1:5101'
-const password = process.env.QA01_PASSWORD
-const adminEmail = 'admin@jobconnect.local'
+const { apiBaseURL: apiBase, password } = disposableEnvironment()
+const adminEmail = disposableAccounts.admin
 const auth = (token) => ({ Authorization: `Bearer ${token}` })
 
 async function body(response) {
@@ -114,11 +114,11 @@ test.describe.serial('QA-02 verification, privacy and protected recruiter workfl
     await Promise.all([recruiter.dispose(), candidate.dispose(), admin.dispose(), browserContext.close()])
   }, 120_000)
 
-  test('admin rejection records its reason and recruiter can resubmit', async () => {
+  test('admin rejection records its reason and recruiter can resubmit', async ({ browser }) => {
     const suffix = crypto.randomUUID().slice(0, 8)
     const recruiter = await request.newContext({ baseURL: apiBase })
     const admin = await request.newContext({ baseURL: apiBase })
-    const registration = await register(recruiter, { email: `qa02-reject-${suffix}@jobconnect.local`, fullName: 'QA-02 Rejected Recruiter', role: 'RECRUITER', companyName: `QA-02 Reject ${suffix}` })
+    const registration = await register(recruiter, { email: `qa02-reject-${suffix}@example.invalid`, fullName: 'QA-02 Rejected Recruiter', role: 'RECRUITER', companyName: `QA-02 Reject ${suffix}` })
     const adminToken = await login(admin, adminEmail)
     const company = await body(await recruiter.get('/api/companies/me', { headers: auth(registration.token) }))
     await body(await recruiter.patch('/api/companies/me', { headers: auth(registration.token), data: { name: company.name, address: 'QA-02 rejection address' } }))
@@ -127,6 +127,25 @@ test.describe.serial('QA-02 verification, privacy and protected recruiter workfl
     const rejected = await body(await admin.patch(`/api/admin/verification-requests/${submitted.id}`, { headers: auth(adminToken), data: { decision: 'REJECTED', reason } }))
     expect(rejected.rejectionReason).toBe(reason)
     expect((await body(await recruiter.get('/api/companies/me', { headers: auth(registration.token) }))).verificationStatus).toBe('REJECTED')
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'vi-VN' })
+    const page = await context.newPage()
+    await page.goto('/login')
+    await page.locator('input[name="email"]').fill(registration.user.email)
+    await page.locator('input[name="password"]').fill(password)
+    await page.locator('.auth-form button[type="submit"]').click()
+    await expect(page.getByText(`Lý do từ chối: ${reason}`)).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await context.close()
+    const adminContext = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'vi-VN' })
+    const adminPage = await adminContext.newPage()
+    await adminPage.goto('/login')
+    await adminPage.locator('input[name="email"]').fill(adminEmail)
+    await adminPage.locator('input[name="password"]').fill(password)
+    await adminPage.locator('.auth-form button[type="submit"]').click()
+    await adminPage.waitForURL('**/admin*')
+    await adminPage.goto('/admin?section=audit')
+    await expect(adminPage.getByText('Từ chối xác minh doanh nghiệp')).toBeVisible()
+    await adminContext.close()
     expect((await recruiter.post('/api/companies/me/verification-requests', { headers: auth(registration.token), data: { requestKey: crypto.randomUUID() } })).status()).toBe(201)
     await Promise.all([recruiter.dispose(), admin.dispose()])
   })

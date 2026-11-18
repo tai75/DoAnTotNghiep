@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/auth'
 import LoadingScreen from '../components/LoadingScreen'
 import RouteErrorBoundary from '../components/RouteErrorBoundary'
+import { getPostAuthDestination, getRolePath } from './authRedirect'
 
 const AuthPage = lazy(() => import('../pages/AuthPage'))
 const PasswordRecoveryPage = lazy(() => import('../pages/PasswordRecoveryPage'))
@@ -31,20 +32,13 @@ function RoleGuard({ roles, children }) {
   return roles.includes(session.user.role) ? children : <Navigate to={getRolePath(session.user.role)} replace />
 }
 
-function getRolePath(role) {
-  if (role === 'ADMIN') return '/admin'
-  if (role === 'RECRUITER') return '/recruiter'
-  return '/jobs'
-}
-
 function GuestRoute() {
   const { session, isLoading } = useAuth()
   const location = useLocation()
   if (isLoading) return <LoadingScreen />
   if (session) {
     const returnTo = new URLSearchParams(location.search).get('returnTo')
-    const safeReturnTo = returnTo?.startsWith('/') && !returnTo.startsWith('//') ? returnTo : null
-    return <Navigate to={safeReturnTo || getRolePath(session.user.role)} replace />
+    return <Navigate to={getPostAuthDestination(session.user.role, returnTo)} replace />
   }
   return <AuthPage />
 }

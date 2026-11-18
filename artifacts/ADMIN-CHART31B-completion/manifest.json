@@ -1,0 +1,153 @@
+﻿{
+    "task":  "ADMIN-CHART31B completion",
+    "baselineFolder":  "C:\\Users\\LENOVO\\DATN\\artifacts\\ADMIN-CHART31B",
+    "currentFolder":  "C:\\Users\\LENOVO\\DATN\\artifacts\\ADMIN-CHART31B-completion",
+    "note":  "BEFORE là bản sao nguyên vẹn của ảnh gốc chụp trước lượt sửa hiện tại. originalBefore ghi nguồn tuyệt đối; không dựng lại hay chỉnh ảnh.",
+    "beforeAfterPairs":  [
+                             {
+                                 "route":  "/admin?section=overview",
+                                 "role":  "ADMIN",
+                                 "viewport":  {
+                                                  "width":  390,
+                                                  "height":  844
+                                              },
+                                 "dataState":  "valid",
+                                 "environment":  "Chrome headless + Vite localhost + API mock",
+                                 "before":  "baseline/admin-overview-valid-390x844-AFTER.png",
+                                 "after":  "after/admin-overview-valid-390x844-AFTER.png",
+                                 "beforeProvenance":  "Ảnh AFTER của lần thực hiện ADMIN-CHART31B trước, chụp trước các sửa đổi trong yêu cầu hiện tại",
+                                 "mockData":  true,
+                                 "originalBefore":  "C:\\Users\\LENOVO\\DATN\\artifacts\\ADMIN-CHART31B\\after\\admin-overview-valid-390x844-AFTER.png"
+                             },
+                             {
+                                 "route":  "/admin?section=overview",
+                                 "role":  "ADMIN",
+                                 "viewport":  {
+                                                  "width":  390,
+                                                  "height":  844
+                                              },
+                                 "dataState":  "zero",
+                                 "environment":  "Chrome headless + Vite localhost + API mock",
+                                 "before":  "baseline/admin-overview-zero-390x844-AFTER.png",
+                                 "after":  "after/admin-overview-zero-390x844-AFTER.png",
+                                 "beforeProvenance":  "Ảnh AFTER của lần thực hiện ADMIN-CHART31B trước, chụp trước các sửa đổi trong yêu cầu hiện tại",
+                                 "mockData":  true,
+                                 "originalBefore":  "C:\\Users\\LENOVO\\DATN\\artifacts\\ADMIN-CHART31B\\after\\admin-overview-zero-390x844-AFTER.png"
+                             },
+                             {
+                                 "route":  "/admin?section=overview",
+                                 "role":  "ADMIN",
+                                 "viewport":  {
+                                                  "width":  390,
+                                                  "height":  844
+                                              },
+                                 "dataState":  "missing",
+                                 "environment":  "Chrome headless + Vite localhost + API mock",
+                                 "before":  "baseline/admin-overview-missing-390x844-AFTER.png",
+                                 "after":  "after/admin-overview-missing-390x844-AFTER.png",
+                                 "beforeProvenance":  "Ảnh AFTER của lần thực hiện ADMIN-CHART31B trước, chụp trước các sửa đổi trong yêu cầu hiện tại",
+                                 "mockData":  true,
+                                 "originalBefore":  "C:\\Users\\LENOVO\\DATN\\artifacts\\ADMIN-CHART31B\\after\\admin-overview-missing-390x844-AFTER.png"
+                             },
+                             {
+                                 "route":  "/admin?section=overview",
+                                 "role":  "ADMIN",
+                                 "viewport":  {
+                                                  "width":  390,
+                                                  "height":  844
+                                              },
+                                 "dataState":  "error500",
+                                 "environment":  "Chrome headless + Vite localhost + API mock",
+                                 "before":  "baseline/admin-overview-error500-390x844-AFTER.png",
+                                 "after":  "after/admin-overview-error500-390x844-AFTER.png",
+                                 "beforeProvenance":  "Ảnh AFTER của lần thực hiện ADMIN-CHART31B trước, chụp trước các sửa đổi trong yêu cầu hiện tại",
+                                 "mockData":  true,
+                                 "originalBefore":  "C:\\Users\\LENOVO\\DATN\\artifacts\\ADMIN-CHART31B\\after\\admin-overview-error500-390x844-AFTER.png"
+                             },
+                             {
+                                 "route":  "/admin?section=overview",
+                                 "role":  "ADMIN",
+                                 "viewport":  {
+                                                  "width":  1440,
+                                                  "height":  900
+                                              },
+                                 "dataState":  "valid",
+                                 "environment":  "Chrome headless + Vite localhost + API mock",
+                                 "before":  "baseline/admin-overview-valid-1440x900-AFTER.png",
+                                 "after":  "after/admin-overview-valid-1440x900-AFTER.png",
+                                 "beforeProvenance":  "Ảnh AFTER của lần thực hiện ADMIN-CHART31B trước, chụp trước các sửa đổi trong yêu cầu hiện tại",
+                                 "mockData":  true,
+                                 "originalBefore":  "C:\\Users\\LENOVO\\DATN\\artifacts\\ADMIN-CHART31B\\after\\admin-overview-valid-1440x900-AFTER.png"
+                             },
+                             {
+                                 "route":  "/admin?section=overview",
+                                 "role":  "ADMIN",
+                                 "viewport":  {
+                                                  "width":  1440,
+                                                  "height":  900
+                                              },
+                                 "dataState":  "zero",
+                                 "environment":  "Chrome headless + Vite localhost + API mock",
+                                 "before":  "baseline/admin-overview-zero-1440x900-AFTER.png",
+                                 "after":  "after/admin-overview-zero-1440x900-AFTER.png",
+                                 "beforeProvenance":  "Ảnh AFTER của lần thực hiện ADMIN-CHART31B trước, chụp trước các sửa đổi trong yêu cầu hiện tại",
+                                 "mockData":  true,
+                                 "originalBefore":  "C:\\Users\\LENOVO\\DATN\\artifacts\\ADMIN-CHART31B\\after\\admin-overview-zero-1440x900-AFTER.png"
+                             },
+                             {
+                                 "route":  "/admin?section=overview",
+                                 "role":  "ADMIN",
+                                 "viewport":  {
+                                                  "width":  1440,
+                                                  "height":  900
+                                              },
+                                 "dataState":  "missing",
+                                 "environment":  "Chrome headless + Vite localhost + API mock",
+                                 "before":  "baseline/admin-overview-missing-1440x900-AFTER.png",
+                                 "after":  "after/admin-overview-missing-1440x900-AFTER.png",
+                                 "beforeProvenance":  "Ảnh AFTER của lần thực hiện ADMIN-CHART31B trước, chụp trước các sửa đổi trong yêu cầu hiện tại",
+                                 "mockData":  true,
+                                 "originalBefore":  "C:\\Users\\LENOVO\\DATN\\artifacts\\ADMIN-CHART31B\\after\\admin-overview-missing-1440x900-AFTER.png"
+                             },
+                             {
+                                 "route":  "/admin?section=overview",
+                                 "role":  "ADMIN",
+                                 "viewport":  {
+                                                  "width":  1440,
+                                                  "height":  900
+                                              },
+                                 "dataState":  "error500",
+                                 "environment":  "Chrome headless + Vite localhost + API mock",
+                                 "before":  "baseline/admin-overview-error500-1440x900-AFTER.png",
+                                 "after":  "after/admin-overview-error500-1440x900-AFTER.png",
+                                 "beforeProvenance":  "Ảnh AFTER của lần thực hiện ADMIN-CHART31B trước, chụp trước các sửa đổi trong yêu cầu hiện tại",
+                                 "mockData":  true,
+                                 "originalBefore":  "C:\\Users\\LENOVO\\DATN\\artifacts\\ADMIN-CHART31B\\after\\admin-overview-error500-1440x900-AFTER.png"
+                             }
+                         ],
+    "viewportEvidence":  [
+                             "tablet-navigation-768-viewport.png",
+                             "scroll-bottom-390-viewport.png",
+                             "scroll-bottom-768-viewport.png",
+                             "table-open-390-viewport.png",
+                             "table-open-1440-viewport.png"
+                         ],
+    "testReports":  [
+                        "verify-results.json",
+                        "completion-results.json",
+                        "after-results.json",
+                        "regression-foundation30b-rerun/verify-manifest.json"
+                    ],
+    "physicalDeviceVerified":  false,
+    "backendVerified":  false,
+    "results":  {
+                    "chartMatrix":  "57/57 PASS",
+                    "completion":  "15/15 PASS",
+                    "foundationRerun":  "45/45 PASS",
+                    "uiFix29":  "PASS",
+                    "unit":  "5/5 PASS",
+                    "lint":  "PASS với cảnh báo sẵn có",
+                    "build":  "PASS",
+                    "diffCheck":  "PASS"
+                }
+}

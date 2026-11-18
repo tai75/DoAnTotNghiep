@@ -1,0 +1,70 @@
+{
+  "environment": "Chrome headless + Vite preview + API mock; không dùng backend/database/Gemini/SMTP",
+  "phase": "verify",
+  "results": [
+    {
+      "phase": "verify",
+      "case": "chat-candidate",
+      "route": "/jobs",
+      "role": "CANDIDATE",
+      "width": 390,
+      "data": "API mock: rỗng",
+      "status": "PASS",
+      "measure": {
+        "title": "Tìm việc làm — Job Connect",
+        "font": "\"Be Vietnam Pro\", system-ui, -apple-system, \"Segoe UI\", sans-serif",
+        "horizontalOverflow": false,
+        "nav": {
+          "x": 0,
+          "y": 772,
+          "width": 390,
+          "height": 72,
+          "bottom": 844
+        },
+        "contentPaddingBottom": 76,
+        "appContent": {
+          "x": 0,
+          "y": 115,
+          "width": 390,
+          "height": 1669.34375,
+          "bottom": 1784.34375
+        },
+        "last": "FOOTER",
+        "safeArea": "7px",
+        "detail": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0,
+          "bottom": 0
+        },
+        "chartCount": 0,
+        "chartEmptyCount": 0,
+        "emptyStateCount": 2,
+        "headerLabels": [
+          {
+            "text": "☰",
+            "aria": "Mở menu điều hướng",
+            "title": "Mở menu điều hướng"
+          },
+          {
+            "text": "♢",
+            "aria": "Thông báo",
+            "title": "Thông báo"
+          },
+          {
+            "text": "✉",
+            "aria": "Tin nhắn",
+            "title": "Tin nhắn"
+          },
+          {
+            "text": "NNgười dùng kiểm thử⌄",
+            "aria": "Mở menu tài khoản",
+            "title": "Mở menu tài khoản"
+          }
+        ]
+      },
+      "focusHidesNav": true
+    }
+  ]
+}

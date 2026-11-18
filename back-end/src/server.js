@@ -11,8 +11,8 @@ let alertWorker;
 async function start() {
   await storage.initialize();
   await recoverAiPermits();
-  server = app.listen(config.port, () => {
-    console.log(`Job Connect API listening on http://localhost:${config.port}`);
+  server = app.listen(config.port, config.bindHost, () => {
+    console.log(`Job Connect API listening on http://${config.bindHost || 'localhost'}:${config.port}`);
   });
   alertWorker = startAlertWorker();
 }

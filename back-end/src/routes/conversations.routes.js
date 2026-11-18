@@ -71,7 +71,8 @@ router.get('/', authenticate, authorize('CANDIDATE', 'RECRUITER'), requireActive
     where,
     include: {
       application: { include: { job: { select: { id: true, title: true, companyId: true } }, candidate: { include: { user: { select: { id: true, fullName: true } } } } } },
-      messages: { orderBy: { createdAt: 'desc' }, take: 1 }
+      messages: { orderBy: { createdAt: 'desc' }, take: 1 },
+      _count: { select: { messages: { where: { readAt: null, senderUserId: { not: req.user.id } } } } }
     },
     orderBy: { updatedAt: 'desc' }
   });
@@ -81,7 +82,7 @@ router.get('/', authenticate, authorize('CANDIDATE', 'RECRUITER'), requireActive
     job: conversation.application.job,
     candidate: conversation.application.candidate.user,
     lastMessage: conversation.messages[0] || null,
-    unreadCount: conversation.messages.filter((message) => !message.readAt && message.senderUserId !== req.user.id).length
+    unreadCount: conversation._count.messages
   })) });
 }));
 

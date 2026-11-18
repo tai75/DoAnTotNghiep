@@ -1,7 +1,7 @@
 .candidate-page { min-height: 100svh; padding: 46px clamp(18px, 8vw, 130px) 80px; color: var(--ink); background: #f7faff; }
 .simple-page-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; max-width: 1060px; margin: 0 auto 28px; }
 .simple-page-header a { color: var(--blue-700); font-size: 12px; }
-.simple-page-header h1 { margin: 8px 0 0; color: var(--blue-950); font-family: 'Manrope', sans-serif; font-size: clamp(28px, 4vw, 44px); letter-spacing: -.05em; }
+.simple-page-header h1 { margin: 8px 0 0; color: var(--blue-950); font-family: var(--font-family); font-size: var(--type-page); letter-spacing: -.035em; }
 .simple-page-header select, .application-actions button, .saved-card button { border: 1px solid #dfe8f1; border-radius: 7px; padding: 10px 12px; color: #64778b; background: white; font-size: 12px; }
 .application-list, .saved-grid { display: grid; gap: 12px; max-width: 1060px; margin: auto; }
 .application-card, .saved-card { display: flex; justify-content: space-between; align-items: center; gap: 20px; border: 1px solid #e3ecf4; border-radius: 10px; padding: 20px; background: white; }

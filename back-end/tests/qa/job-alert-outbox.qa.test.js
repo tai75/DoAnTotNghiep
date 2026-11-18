@@ -1,21 +1,21 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PrismaClient } from '@prisma/client'
 import workerModule from '../../src/jobs/alertWorker.js'
-import qaDatabase from '../../scripts/qa01-db.cjs'
+import e2eDatabase from '../../scripts/e2e-db.cjs'
 
-const enabled = process.env.RUN_ALERT_QA_TESTS === '1'
+const enabled = process.env.RUN_E2E_ALERT_TESTS === '1'
 const {
   runAlertWorker, reserveAlertEvent, claimNextEvent, deliverClaimedEvent, recoverExpiredLeases,
 } = workerModule
-const { assertQaDatabase, resetBusinessData, seed } = qaDatabase
+const { assertCanonicalDatabase, resetBusinessData, seed } = e2eDatabase
 
 describe.skipIf(!enabled)('QA durable job alert outbox', () => {
   let prisma
   let fixture
 
   beforeAll(async () => {
-    prisma = new PrismaClient({ datasourceUrl: process.env.QA01_DATABASE_URL })
-    await assertQaDatabase(prisma)
+    prisma = new PrismaClient({ datasourceUrl: process.env.E2E_DATABASE_URL })
+    await assertCanonicalDatabase(prisma)
   })
 
   beforeEach(async () => {

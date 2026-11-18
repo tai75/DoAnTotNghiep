@@ -1,0 +1,380 @@
+﻿{
+    "task":  "ADMIN-CHART31B",
+    "route":  "/admin?section=overview",
+    "role":  "ADMIN",
+    "environment":  "Chrome headless, Vite localhost, API mock; không kết nối backend hoặc database thật",
+    "mockDisclosure":  "Tất cả ảnh dùng dữ liệu mock; ảnh AFTER có dữ liệu là mock. Không có dữ liệu cá nhân thật.",
+    "beforeAfterPairs":  [
+                             {
+                                 "route":  "/admin?section=overview",
+                                 "role":  "ADMIN",
+                                 "viewport":  {
+                                                  "width":  390,
+                                                  "height":  844
+                                              },
+                                 "dataState":  "empty",
+                                 "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                                 "before":  "before/admin-overview-empty-390x844-BEFORE.png",
+                                 "after":  "after/admin-overview-empty-390x844-AFTER.png",
+                                 "apiMock":  true
+                             },
+                             {
+                                 "route":  "/admin?section=overview",
+                                 "role":  "ADMIN",
+                                 "viewport":  {
+                                                  "width":  390,
+                                                  "height":  844
+                                              },
+                                 "dataState":  "valid",
+                                 "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                                 "before":  "before/admin-overview-valid-390x844-BEFORE.png",
+                                 "after":  "after/admin-overview-valid-390x844-AFTER.png",
+                                 "apiMock":  true
+                             },
+                             {
+                                 "route":  "/admin?section=overview",
+                                 "role":  "ADMIN",
+                                 "viewport":  {
+                                                  "width":  1440,
+                                                  "height":  900
+                                              },
+                                 "dataState":  "empty",
+                                 "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                                 "before":  "before/admin-overview-empty-1440x900-BEFORE.png",
+                                 "after":  "after/admin-overview-empty-1440x900-AFTER.png",
+                                 "apiMock":  true
+                             },
+                             {
+                                 "route":  "/admin?section=overview",
+                                 "role":  "ADMIN",
+                                 "viewport":  {
+                                                  "width":  1440,
+                                                  "height":  900
+                                              },
+                                 "dataState":  "valid",
+                                 "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                                 "before":  "before/admin-overview-valid-1440x900-BEFORE.png",
+                                 "after":  "after/admin-overview-valid-1440x900-AFTER.png",
+                                 "apiMock":  true
+                             }
+                         ],
+    "afterOnly":  [
+                      {
+                          "route":  "/admin?section=overview",
+                          "role":  "ADMIN",
+                          "viewport":  {
+                                           "width":  360,
+                                           "height":  800
+                                       },
+                          "dataState":  "empty",
+                          "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                          "file":  "after/admin-overview-empty-360x800-AFTER.png",
+                          "apiMock":  true
+                      },
+                      {
+                          "route":  "/admin?section=overview",
+                          "role":  "ADMIN",
+                          "viewport":  {
+                                           "width":  360,
+                                           "height":  800
+                                       },
+                          "dataState":  "valid",
+                          "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                          "file":  "after/admin-overview-valid-360x800-AFTER.png",
+                          "apiMock":  true
+                      },
+                      {
+                          "route":  "/admin?section=overview",
+                          "role":  "ADMIN",
+                          "viewport":  {
+                                           "width":  360,
+                                           "height":  800
+                                       },
+                          "dataState":  "zero",
+                          "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                          "file":  "after/admin-overview-zero-360x800-AFTER.png",
+                          "apiMock":  true
+                      },
+                      {
+                          "route":  "/admin?section=overview",
+                          "role":  "ADMIN",
+                          "viewport":  {
+                                           "width":  360,
+                                           "height":  800
+                                       },
+                          "dataState":  "missing",
+                          "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                          "file":  "after/admin-overview-missing-360x800-AFTER.png",
+                          "apiMock":  true
+                      },
+                      {
+                          "route":  "/admin?section=overview",
+                          "role":  "ADMIN",
+                          "viewport":  {
+                                           "width":  360,
+                                           "height":  800
+                                       },
+                          "dataState":  "error500",
+                          "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                          "file":  "after/admin-overview-error500-360x800-AFTER.png",
+                          "apiMock":  true
+                      },
+                      {
+                          "route":  "/admin?section=overview",
+                          "role":  "ADMIN",
+                          "viewport":  {
+                                           "width":  360,
+                                           "height":  800
+                                       },
+                          "dataState":  "loading",
+                          "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                          "file":  "after/admin-overview-loading-360x800-AFTER.png",
+                          "apiMock":  true
+                      },
+                      {
+                          "route":  "/admin?section=overview",
+                          "role":  "ADMIN",
+                          "viewport":  {
+                                           "width":  390,
+                                           "height":  844
+                                       },
+                          "dataState":  "zero",
+                          "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                          "file":  "after/admin-overview-zero-390x844-AFTER.png",
+                          "apiMock":  true
+                      },
+                      {
+                          "route":  "/admin?section=overview",
+                          "role":  "ADMIN",
+                          "viewport":  {
+                                           "width":  390,
+                                           "height":  844
+                                       },
+                          "dataState":  "missing",
+                          "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                          "file":  "after/admin-overview-missing-390x844-AFTER.png",
+                          "apiMock":  true
+                      },
+                      {
+                          "route":  "/admin?section=overview",
+                          "role":  "ADMIN",
+                          "viewport":  {
+                                           "width":  390,
+                                           "height":  844
+                                       },
+                          "dataState":  "error500",
+                          "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                          "file":  "after/admin-overview-error500-390x844-AFTER.png",
+                          "apiMock":  true
+                      },
+                      {
+                          "route":  "/admin?section=overview",
+                          "role":  "ADMIN",
+                          "viewport":  {
+                                           "width":  390,
+                                           "height":  844
+                                       },
+                          "dataState":  "loading",
+                          "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                          "file":  "after/admin-overview-loading-390x844-AFTER.png",
+                          "apiMock":  true
+                      },
+                      {
+                          "route":  "/admin?section=overview",
+                          "role":  "ADMIN",
+                          "viewport":  {
+                                           "width":  768,
+                                           "height":  1024
+                                       },
+                          "dataState":  "empty",
+                          "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                          "file":  "after/admin-overview-empty-768x1024-AFTER.png",
+                          "apiMock":  true
+                      },
+                      {
+                          "route":  "/admin?section=overview",
+                          "role":  "ADMIN",
+                          "viewport":  {
+                                           "width":  768,
+                                           "height":  1024
+                                       },
+                          "dataState":  "valid",
+                          "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                          "file":  "after/admin-overview-valid-768x1024-AFTER.png",
+                          "apiMock":  true
+                      },
+                      {
+                          "route":  "/admin?section=overview",
+                          "role":  "ADMIN",
+                          "viewport":  {
+                                           "width":  768,
+                                           "height":  1024
+                                       },
+                          "dataState":  "zero",
+                          "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                          "file":  "after/admin-overview-zero-768x1024-AFTER.png",
+                          "apiMock":  true
+                      },
+                      {
+                          "route":  "/admin?section=overview",
+                          "role":  "ADMIN",
+                          "viewport":  {
+                                           "width":  768,
+                                           "height":  1024
+                                       },
+                          "dataState":  "missing",
+                          "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                          "file":  "after/admin-overview-missing-768x1024-AFTER.png",
+                          "apiMock":  true
+                      },
+                      {
+                          "route":  "/admin?section=overview",
+                          "role":  "ADMIN",
+                          "viewport":  {
+                                           "width":  768,
+                                           "height":  1024
+                                       },
+                          "dataState":  "error500",
+                          "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                          "file":  "after/admin-overview-error500-768x1024-AFTER.png",
+                          "apiMock":  true
+                      },
+                      {
+                          "route":  "/admin?section=overview",
+                          "role":  "ADMIN",
+                          "viewport":  {
+                                           "width":  768,
+                                           "height":  1024
+                                       },
+                          "dataState":  "loading",
+                          "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                          "file":  "after/admin-overview-loading-768x1024-AFTER.png",
+                          "apiMock":  true
+                      },
+                      {
+                          "route":  "/admin?section=overview",
+                          "role":  "ADMIN",
+                          "viewport":  {
+                                           "width":  1024,
+                                           "height":  768
+                                       },
+                          "dataState":  "empty",
+                          "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                          "file":  "after/admin-overview-empty-1024x768-AFTER.png",
+                          "apiMock":  true
+                      },
+                      {
+                          "route":  "/admin?section=overview",
+                          "role":  "ADMIN",
+                          "viewport":  {
+                                           "width":  1024,
+                                           "height":  768
+                                       },
+                          "dataState":  "valid",
+                          "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                          "file":  "after/admin-overview-valid-1024x768-AFTER.png",
+                          "apiMock":  true
+                      },
+                      {
+                          "route":  "/admin?section=overview",
+                          "role":  "ADMIN",
+                          "viewport":  {
+                                           "width":  1024,
+                                           "height":  768
+                                       },
+                          "dataState":  "zero",
+                          "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                          "file":  "after/admin-overview-zero-1024x768-AFTER.png",
+                          "apiMock":  true
+                      },
+                      {
+                          "route":  "/admin?section=overview",
+                          "role":  "ADMIN",
+                          "viewport":  {
+                                           "width":  1024,
+                                           "height":  768
+                                       },
+                          "dataState":  "missing",
+                          "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                          "file":  "after/admin-overview-missing-1024x768-AFTER.png",
+                          "apiMock":  true
+                      },
+                      {
+                          "route":  "/admin?section=overview",
+                          "role":  "ADMIN",
+                          "viewport":  {
+                                           "width":  1024,
+                                           "height":  768
+                                       },
+                          "dataState":  "error500",
+                          "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                          "file":  "after/admin-overview-error500-1024x768-AFTER.png",
+                          "apiMock":  true
+                      },
+                      {
+                          "route":  "/admin?section=overview",
+                          "role":  "ADMIN",
+                          "viewport":  {
+                                           "width":  1024,
+                                           "height":  768
+                                       },
+                          "dataState":  "loading",
+                          "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                          "file":  "after/admin-overview-loading-1024x768-AFTER.png",
+                          "apiMock":  true
+                      },
+                      {
+                          "route":  "/admin?section=overview",
+                          "role":  "ADMIN",
+                          "viewport":  {
+                                           "width":  1440,
+                                           "height":  900
+                                       },
+                          "dataState":  "zero",
+                          "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                          "file":  "after/admin-overview-zero-1440x900-AFTER.png",
+                          "apiMock":  true
+                      },
+                      {
+                          "route":  "/admin?section=overview",
+                          "role":  "ADMIN",
+                          "viewport":  {
+                                           "width":  1440,
+                                           "height":  900
+                                       },
+                          "dataState":  "missing",
+                          "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                          "file":  "after/admin-overview-missing-1440x900-AFTER.png",
+                          "apiMock":  true
+                      },
+                      {
+                          "route":  "/admin?section=overview",
+                          "role":  "ADMIN",
+                          "viewport":  {
+                                           "width":  1440,
+                                           "height":  900
+                                       },
+                          "dataState":  "error500",
+                          "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                          "file":  "after/admin-overview-error500-1440x900-AFTER.png",
+                          "apiMock":  true
+                      },
+                      {
+                          "route":  "/admin?section=overview",
+                          "role":  "ADMIN",
+                          "viewport":  {
+                                           "width":  1440,
+                                           "height":  900
+                                       },
+                          "dataState":  "loading",
+                          "environment":  "Chrome headless + Vite + API mock; không dùng backend/database thật",
+                          "file":  "after/admin-overview-loading-1440x900-AFTER.png",
+                          "apiMock":  true
+                      }
+                  ],
+    "screenshotCounts":  {
+                             "before":  4,
+                             "after":  30,
+                             "pairs":  4
+                         }
+}

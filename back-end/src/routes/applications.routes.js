@@ -7,6 +7,7 @@ const { authenticate, authorize, requireActiveRecruiterCompany, requireVerifiedR
 const config = require('../config/env');
 const { calculateMatchScore, buildRuleExplanation } = require('../services/matching.service');
 const { sendEmail } = require('../services/mail.service');
+const { applicationStatusLabel, applicationStatusNotificationContent } = require('../services/applicationStatusLabel.service');
 const {
   assertExpectedStatus,
   applyApplicationTransition
@@ -115,7 +116,7 @@ async function sendStatusEmailBestEffort({ applicationId, email, jobTitle, statu
     await sendEmail({
       to: email,
       subject: `Cập nhật đơn ứng tuyển: ${jobTitle}`,
-      text: `Đơn ứng tuyển của bạn đã chuyển sang trạng thái ${status}. Xem chi tiết tại ${config.frontendUrl}/my-jobs?tab=applied`
+      text: `Đơn ứng tuyển của bạn đã chuyển sang trạng thái ${applicationStatusLabel(status)}. Xem chi tiết tại ${config.frontendUrl}/my-jobs?tab=applied`
     });
   } catch (error) {
     console.warn('[application-status-email] delivery failed after commit', {
@@ -365,7 +366,7 @@ router.patch('/:id/status', authenticate, authorize('RECRUITER'), requireActiveR
         userId: application.candidate.userId,
         type: 'APPLICATION_STATUS_CHANGED',
         title: 'Đơn ứng tuyển được cập nhật',
-        content: `Đơn ứng tuyển vị trí ${application.job.title} đã chuyển sang trạng thái ${req.body.status}.`,
+        content: applicationStatusNotificationContent(application.job.title, req.body.status),
         link: `/my-jobs?tab=applied`
       }
     });

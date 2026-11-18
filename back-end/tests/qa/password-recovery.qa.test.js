@@ -3,23 +3,23 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import request from 'supertest'
 import { PrismaClient } from '@prisma/client'
 import appModule from '../../src/app.js'
-import qaDatabase from '../../scripts/qa01-db.cjs'
+import e2eDatabase from '../../scripts/e2e-db.cjs'
 
-const enabled = process.env.RUN_AUTH_QA_TESTS === '1'
+const enabled = process.env.RUN_E2E_AUTH_TESTS === '1'
 const app = appModule.default || appModule
-const { assertQaDatabase, resetBusinessData, seed } = qaDatabase
+const { assertCanonicalDatabase, resetBusinessData, seed } = e2eDatabase
 const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex')
 
 describe.skipIf(!enabled)('QA database password recovery', () => {
   let prisma
   let candidate
-  const oldPassword = process.env.QA01_PASSWORD
+  const oldPassword = process.env.E2E_PASSWORD
   const newPassword = 'QA01-New-Password-2026!'
 
   beforeAll(async () => {
-    prisma = new PrismaClient({ datasourceUrl: process.env.QA01_DATABASE_URL })
+    prisma = new PrismaClient({ datasourceUrl: process.env.E2E_DATABASE_URL })
     globalThis.__JOB_CONNECT_TEST_PRISMA__ = prisma
-    await assertQaDatabase(prisma)
+    await assertCanonicalDatabase(prisma)
     await resetBusinessData(prisma)
     await seed(prisma)
     candidate = await prisma.user.findUnique({ where: { email: 'candidate@jobconnect.local' } })

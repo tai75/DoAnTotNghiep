@@ -1,13 +1,14 @@
 import { expect, test } from '@playwright/test'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { authStatePath, disposableEnvironment } from './support/disposable-env'
 
 async function openRole(browser, role) {
-  return browser.newContext({ storageState: path.resolve('.auth', `${role}.json`), viewport: { width: 1440, height: 900 }, locale: 'vi-VN' })
+  return browser.newContext({ storageState: authStatePath(role), viewport: { width: 1440, height: 900 }, locale: 'vi-VN' })
 }
 
 async function closeRole(context, role) {
-  await context.storageState({ path: path.resolve('.auth', `${role}.json`) })
+  await context.storageState({ path: authStatePath(role) })
   await context.close()
 }
 
@@ -15,15 +16,15 @@ test('independent business routes and direct lazy-route refresh', async ({ brows
   test.skip(testInfo.project.name !== 'desktop-1440', 'Run once on desktop; responsive shell has a dedicated matrix.')
   test.setTimeout(120_000)
   const results = []
-  const directory = path.resolve('e2e-artifacts', 'business-readonly')
+  const directory = path.join(disposableEnvironment().artifactsRoot, 'business-readonly')
   await fs.mkdir(directory, { recursive: true })
 
   let context = await openRole(browser, 'candidate')
   let page = await context.newPage()
   await page.goto('/profile')
-  await expect(page.getByRole('heading', { name: 'Demo Candidate' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Ứng viên kiểm thử' })).toBeVisible()
   await page.reload()
-  await expect(page.getByRole('heading', { name: 'Demo Candidate' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Ứng viên kiểm thử' })).toBeVisible()
   await page.getByRole('button', { name: 'CV', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'CV của bạn' })).toBeVisible()
   await expect(page.locator('.resource-item')).toHaveCount(1)
@@ -49,7 +50,7 @@ test('independent business routes and direct lazy-route refresh', async ({ brows
   await expect(page.getByText('Tổng tin tuyển dụng')).toBeVisible()
   results.push({ case: 'recruiter-dashboard-direct-refresh', status: 'PASS' })
   await page.locator('.recruiter-sidebar').getByRole('button', { name: 'Quản lý tin' }).click()
-  await expect(page.getByRole('cell', { name: 'QA-E2E-20261104-FULLSTACK-R2' })).toBeVisible()
+  await expect(page.getByRole('cell', { name: 'QA-03B1 Kỹ sư phần mềm' })).toBeVisible()
   results.push({ case: 'recruiter-job-management', status: 'PASS' })
   await page.locator('.recruiter-sidebar').getByRole('button', { name: 'Ứng viên' }).click()
   await expect(page.getByRole('heading', { name: 'Quản lý ứng viên' })).toBeVisible()

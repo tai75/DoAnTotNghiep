@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { DndContext, useDraggable, useDroppable } from '@dnd-kit/core'
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { recruiterApi } from '../services/api'
 import { useAuth } from '../context/auth'
 import AppShell from '../components/AppShell'
+import { mergeRecruiterApplication } from '../utils/mergeRecruiterApplication'
 import {
   applicationStatusLabels,
   canRecruiterTransition,
@@ -67,7 +68,7 @@ function JobPipeline({ job, onError }) {
     setApplications((current) => current.map((item) => item.id === application.id ? { ...item, status } : item))
     try {
       const updated = await recruiterApi.updateApplicationStatus(application.id, status, undefined, application.status)
-      setApplications((current) => current.map((item) => item.id === application.id ? { ...item, ...updated } : item))
+      setApplications((current) => current.map((item) => item.id === application.id ? mergeRecruiterApplication(item, updated) : item))
       setSelected((current) => current?.id === application.id ? { ...current, status, history: [...(current.history || []), { id: Date.now(), toStatus: status, createdAt: new Date().toISOString() }] } : current)
     } catch (error) {
       if (error.status === 409) {
@@ -110,16 +111,18 @@ function JobPipeline({ job, onError }) {
   return <div className="pipeline-wrap"><div className="pipeline-toolbar"><label>Điểm match tối thiểu<input type="number" min="0" max="100" value={minScore} onChange={(event) => setMinScore(event.target.value)} /></label><label>Sắp xếp<select value={sort} onChange={(event) => setSort(event.target.value)}><option value="score">Điểm cao nhất</option><option value="newest">Mới nhất</option></select></label><button className="danger-button" disabled={!selectedIds.length} onClick={bulkReject}>Từ chối đã chọn ({selectedIds.length})</button></div><DndContext onDragEnd={({ active, over }) => { if (!over || !statuses.includes(over.id)) return; const application = applications.find((item) => String(item.id) === String(active.id)); if (application && canRecruiterTransition(application.status, over.id) && application.status !== over.id) changeStatus(application, over.id) }}><div className="pipeline-board">{statuses.map((status) => <PipelineColumn key={status} status={status} applications={grouped[status]} onOpen={(application) => setSelected(application)} onToggle={(id) => setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])} />)}</div></DndContext>{selected && <ApplicationDrawer application={selected} onClose={() => setSelected(null)} onNoteAdded={addNote} onNoteDeleted={deleteNote} onDownload={() => selected.resume && recruiterApi.downloadResume(selected.resume.id, selected.resume.fileName).catch((error) => onError(error.message))}   onStatusChange={changeStatus} onMessage={async () => { try { await recruiterApi.createConversation(selected.id); navigate('/messages') } catch (error) { onError(error.message) } }} />}</div>
 }
 
-function JobForm({ initialJob, skills, onSave, onAutoSave, onSubmitForReview, onCancel, onSuggest }) {
-  const [step, setStep] = useState(1)
-  const [formValues, setForm] = useState(() => ({
+function JobForm({ initialJob, initialDraft, onDraftChange, skills, onSave, onAutoSave, onSubmitForReview, onCancel, onSuggest }) {
+  const [step, setStep] = useState(initialDraft?.step || 1)
+  const [dirty, setDirty] = useState(initialDraft?.dirty || false)
+  const [formValues, setForm] = useState(() => initialDraft?.formValues || ({
     title: initialJob?.title || '', description: initialJob?.description || '', location: initialJob?.location || '',
     employmentType: initialJob?.employmentType || '', minSalary: initialJob?.minSalary || '', maxSalary: initialJob?.maxSalary || '',
     requiredYearsExperience: initialJob?.requiredYearsExperience ?? '', deadline: initialJob?.deadline?.slice(0, 10) || '',
     skillIds: initialJob?.skills?.map(({ skill }) => skill.id) || [], requiredSkillIds: initialJob?.skills?.filter(({ isRequired }) => isRequired).map(({ skill }) => skill.id) || [], preferredSkillIds: initialJob?.skills?.filter(({ isRequired }) => !isRequired).map(({ skill }) => skill.id) || [], screeningQuestions: initialJob?.screeningQuestions || []
   }))
+  useEffect(() => { onDraftChange({ step, formValues, dirty }) }, [step, formValues, dirty, onDraftChange])
   const form = new Proxy(formValues, { get: (values, key) => key === 'employmentType' && step === 3 ? (employmentLabels[values[key]] || '') : values[key] })
-  const change = (key, value) => setForm((current) => ({ ...current, [key]: value }))
+  const change = (key, value) => { setDirty(true); setForm((current) => ({ ...current, [key]: value })) }
   const selectedSkills = skills.filter((skill) => form.skillIds.includes(skill.id))
   const payload = useCallback((status = 'DRAFT') => {
     return { ...formValues, skillIds: [...new Set([...formValues.requiredSkillIds, ...formValues.preferredSkillIds])], requiredSkills: formValues.requiredSkillIds, status, employmentType: formValues.employmentType || undefined, minSalary: formValues.minSalary === '' ? undefined : Number(formValues.minSalary), maxSalary: formValues.maxSalary === '' ? undefined : Number(formValues.maxSalary), requiredYearsExperience: formValues.requiredYearsExperience === '' ? undefined : Number(formValues.requiredYearsExperience), deadline: formValues.deadline || undefined }
@@ -141,9 +144,14 @@ function JobForm({ initialJob, skills, onSave, onAutoSave, onSubmitForReview, on
 function Dashboard({ stats }) {
   const statusData = Object.entries(stats.jobsByStatus || {}).map(([name, value]) => ({ name: jobStatuses[name] || name, value }))
   const applicationData = Object.entries(stats.applicationsByStatus || {}).map(([name, value]) => ({ name: applicationStatuses[name] || name, value }))
+  const hasTimeline = stats.timeline?.some((item) => Number(item.count) > 0)
+  const hasApplicationStatus = applicationData.some((item) => Number(item.value) > 0)
+  const hasApplicationsByJob = stats.applicationsByJob?.some((item) => Number(item.count) > 0)
+  const hasJobStatus = statusData.some((item) => Number(item.value) > 0)
+  const emptyChart = (message) => <p className="recruiter-chart-empty" role="status">{message}</p>
   return <><div className="recruiter-stat-grid"><article><span>Tổng tin tuyển dụng</span><strong>{Object.values(stats.jobsByStatus || {}).reduce((a, b) => a + b, 0)}</strong></article><article><span>Tổng đơn ứng tuyển</span><strong>{stats.applicationsTotal}</strong></article><article><span>Tin đang đăng</span><strong>{stats.jobsByStatus?.PUBLISHED || 0}</strong></article><article><span>Đang chờ duyệt</span><strong>{stats.jobsByStatus?.PENDING || 0}</strong></article></div>
-    <div className="recruiter-chart-grid"><section className="recruiter-card"><h2>Đơn ứng tuyển theo thời gian</h2><ResponsiveContainer width="100%" height={280}><BarChart data={stats.timeline}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="date" tickFormatter={(value) => value.slice(5)} /><YAxis allowDecimals={false} /><Tooltip /><Bar dataKey="count" name="Đơn" fill="#2563eb" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></section><section className="recruiter-card"><h2>Tỉ lệ đơn theo trạng thái</h2><ResponsiveContainer width="100%" height={280}><PieChart><Pie data={applicationData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label>{applicationData.map((item, index) => <Cell key={item.name} fill={chartColors[index % chartColors.length]} />)}</Pie><Tooltip /></PieChart></ResponsiveContainer><div className="chart-legend">{applicationData.map((item, index) => <span key={item.name}><i style={{ background: chartColors[index % chartColors.length] }} />{item.name}: {item.value}</span>)}</div></section></div>
-    <section className="recruiter-card"><h2>Đơn theo từng tin</h2><ResponsiveContainer width="100%" height={260}><BarChart data={stats.applicationsByJob} layout="vertical" margin={{ left: 20, right: 20 }}><CartesianGrid strokeDasharray="3 3" /><XAxis type="number" allowDecimals={false} /><YAxis type="category" dataKey="title" width={150} tick={{ fontSize: 12 }} /><Tooltip /><Bar dataKey="count" name="Đơn" fill="#8b5cf6" radius={[0, 4, 4, 0]} /></BarChart></ResponsiveContainer></section><section className="recruiter-card"><h2>Phân bổ tin theo trạng thái</h2><div className="status-summary">{statusData.map((item) => <div key={item.name}><strong>{item.value}</strong><span>{item.name}</span></div>)}</div></section></>
+    <div className="recruiter-chart-grid"><section className="recruiter-card"><h2>Đơn ứng tuyển theo thời gian</h2>{hasTimeline ? <ResponsiveContainer width="100%" height={280}><BarChart data={stats.timeline}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="date" tickFormatter={(value) => value.slice(5)} /><YAxis allowDecimals={false} /><Tooltip /><Bar dataKey="count" name="Đơn" fill="#2563eb" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer> : emptyChart('Chưa có đơn ứng tuyển theo thời gian.')}</section><section className="recruiter-card"><h2>Tỉ lệ đơn theo trạng thái</h2>{hasApplicationStatus ? <><ResponsiveContainer width="100%" height={280}><PieChart><Pie data={applicationData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label>{applicationData.map((item, index) => <Cell key={item.name} fill={chartColors[index % chartColors.length]} />)}</Pie><Tooltip /></PieChart></ResponsiveContainer><div className="chart-legend">{applicationData.map((item, index) => <span key={item.name}><i style={{ background: chartColors[index % chartColors.length] }} />{item.name}: {item.value}</span>)}</div></> : emptyChart('Chưa có đơn để phân loại theo trạng thái.')}</section></div>
+    <section className="recruiter-card"><h2>Đơn theo từng tin</h2>{hasApplicationsByJob ? <ResponsiveContainer width="100%" height={260}><BarChart data={stats.applicationsByJob} layout="vertical" margin={{ left: 20, right: 20 }}><CartesianGrid strokeDasharray="3 3" /><XAxis type="number" allowDecimals={false} /><YAxis type="category" dataKey="title" width={150} tick={{ fontSize: 12 }} /><Tooltip /><Bar dataKey="count" name="Đơn" fill="#8b5cf6" radius={[0, 4, 4, 0]} /></BarChart></ResponsiveContainer> : emptyChart('Chưa có đơn ứng tuyển cho tin nào.')}</section><section className="recruiter-card"><h2>Phân bổ tin theo trạng thái</h2>{hasJobStatus ? <div className="status-summary">{statusData.map((item) => <div key={item.name}><strong>{item.value}</strong><span>{item.name}</span></div>)}</div> : <p className="recruiter-summary-empty" role="status">Chưa có tin tuyển dụng để thống kê.</p>}</section></>
 }
 
 function SuggestedCandidates({ result, onClose, onSearch }) {
@@ -154,21 +162,50 @@ function SuggestedCandidates({ result, onClose, onSearch }) {
 
 export default function RecruiterDashboardPage() {
   const { session, logout } = useAuth()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const requestedSection = searchParams.get('section')
-  const [section, setSection] = useState(() => ['dashboard', 'jobs', 'applications', 'company'].includes(requestedSection) ? requestedSection : 'dashboard')
+  const section = ['dashboard', 'jobs', 'applications', 'company'].includes(requestedSection) ? requestedSection : 'dashboard'
   const [stats, setStats] = useState(null)
   const [company, setCompany] = useState(null)
   const [jobs, setJobs] = useState([])
   const [skills, setSkills] = useState([])
   const [applications, setApplications] = useState([])
   const [editingJob, setEditingJob] = useState(null)
+  const editingJobIdRef = useRef(null)
+  const [jobDraft, setJobDraft] = useState(null)
   const [applicationStatus, setApplicationStatus] = useState('')
   const [selectedApplication, setSelectedApplication] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [suggestedCandidates, setSuggestedCandidates] = useState(null)
   const [pipelineJob, setPipelineJob] = useState(null)
+
+  useEffect(() => {
+    if (!jobDraft?.dirty) return undefined
+    const warnBeforeUnload = (event) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warnBeforeUnload)
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload)
+  }, [jobDraft?.dirty])
+
+  useEffect(() => {
+    if (requestedSection === section) return
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current)
+      next.set('section', section)
+      return next
+    }, { replace: true })
+  }, [requestedSection, section, setSearchParams])
+
+  function changeSection(nextSection) {
+    if (nextSection === section) return
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current)
+      next.set('section', nextSection)
+      next.delete('applicationId')
+      next.delete('jobId')
+      return next
+    })
+  }
 
   useEffect(() => {
     const statusSelect = document.querySelector('#application-status')
@@ -208,10 +245,24 @@ export default function RecruiterDashboardPage() {
     }
   }, [applications, searchParams, section])
   useEffect(() => {
+    editingJobIdRef.current = editingJob?.id || null
+  }, [editingJob?.id])
+  useEffect(() => {
     const jobId = Number(searchParams.get('jobId'))
-    if (section === 'jobs' && jobId && jobs.length) setEditingJob(jobs.find((job) => job.id === jobId) || null)
+    if (section !== 'jobs' || !jobId || !jobs.length || editingJobIdRef.current === jobId) return
+    setJobDraft(null)
+    setEditingJob(jobs.find((job) => job.id === jobId) || null)
   }, [jobs, searchParams, section])
   const companyForm = useMemo(() => company ? { name: company.name || '', description: company.description || '', website: company.website || '', address: company.address || '', employeeCount: company.employeeCount || '', industry: company.industry || '' } : null, [company])
+  function closeJobEditor() {
+    setEditingJob(null)
+    setJobDraft(null)
+    if (searchParams.has('jobId')) setSearchParams((current) => {
+      const next = new URLSearchParams(current)
+      next.delete('jobId')
+      return next
+    }, { replace: true })
+  }
   async function saveCompany(event) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
@@ -219,7 +270,7 @@ export default function RecruiterDashboardPage() {
     try { setCompany(await recruiterApi.updateCompany(payload)); setError('') } catch (actionError) { setError(actionError.message) }
   }
   async function saveJob(payload) {
-    try { if (editingJob?.id) await recruiterApi.updateJob(editingJob.id, payload); else await recruiterApi.createJob(payload); setEditingJob(null); await load() } catch (actionError) { setError(actionError.message) }
+    try { if (editingJob?.id) await recruiterApi.updateJob(editingJob.id, payload); else await recruiterApi.createJob(payload); closeJobEditor(); await load() } catch (actionError) { setError(actionError.message) }
   }
   const autoSaveJob = useCallback(async (payload) => {
     try {
@@ -239,7 +290,7 @@ export default function RecruiterDashboardPage() {
         const created = await recruiterApi.createJob({ ...payload, status: 'DRAFT' })
         if (created?.id) await recruiterApi.submitJob(created.id)
       }
-      setEditingJob(null)
+      closeJobEditor()
       await load()
     } catch (actionError) { setError(actionError.message) }
   }
@@ -251,8 +302,8 @@ export default function RecruiterDashboardPage() {
     if (!canRecruiterTransition(application.status, status) || application.status === status) return
     try {
       const updated = await recruiterApi.updateApplicationStatus(application.id, status, note, application.status)
-      setApplications((current) => current.map((item) => item.id === application.id ? { ...item, ...updated } : item))
-      setSelectedApplication(note ? null : { ...application, ...updated })
+      setApplications((current) => current.map((item) => item.id === application.id ? mergeRecruiterApplication(item, updated) : item))
+      setSelectedApplication(note ? null : mergeRecruiterApplication(application, updated))
     } catch (actionError) {
       if (actionError.status === 409) {
         await loadApplications()
@@ -265,4 +316,4 @@ export default function RecruiterDashboardPage() {
     try { setSuggestedCandidates(await recruiterApi.recommendations(job.id, params)) } catch (actionError) { setError(actionError.message) }
   }
   const nav = [{ id: 'dashboard', label: 'Tổng quan' }, { id: 'jobs', label: 'Quản lý tin' }, { id: 'applications', label: 'Ứng viên' }, { id: 'company', label: 'Hồ sơ công ty' }]
-  return <AppShell user={session.user} logout={logout}><main className="recruiter-shell"><aside className="recruiter-sidebar"><div className="recruiter-brand"><b>JC</b><span>Job Connect</span></div><div className="recruiter-profile"><div className="recruiter-avatar">{session.user.fullName?.charAt(0) || 'R'}</div><div><strong>{session.user.fullName}</strong><small>Nhà tuyển dụng</small></div></div><nav>{nav.map((item) => <button key={item.id} className={section === item.id ? 'active' : ''} onClick={() => { setSection(item.id); setEditingJob(null) }}>{item.label}</button>)}</nav><button className="logout-button" onClick={logout}>Đăng xuất ↗</button></aside><section className="recruiter-main"><header className="recruiter-header"><div><p className="eyebrow">TRUNG TÂM TUYỂN DỤNG</p><h1>{nav.find((item) => item.id === section)?.label}</h1></div><button className="secondary-button" onClick={load}>↻ Làm mới</button></header>{error && <div className="recruiter-alert">{error}</div>}{loading ? <div className="admin-loading">Đang tải dữ liệu...</div> : section === 'dashboard' && stats ? <Dashboard stats={stats} /> : section === 'jobs' ? <section className="recruiter-card">{editingJob ? <><h2>{editingJob.id ? 'Chỉnh sửa tin tuyển dụng' : 'Tạo tin tuyển dụng'}</h2>    <JobForm initialJob={editingJob.id ? editingJob : null} skills={skills} onSave={saveJob} onAutoSave={autoSaveJob} onSubmitForReview={submitJob} onSuggest={suggestDescription} onCancel={() => setEditingJob(null)} /></> : <><div className="section-heading"><h2>Danh sách tin tuyển dụng</h2><button className="primary-button" onClick={() => setEditingJob({})}>+ Tạo tin mới</button></div><div className="job-status-tabs">{Object.entries(jobStatuses).map(([status, label]) => <span key={status}>{label}: {stats?.jobsByStatus?.[status] || 0}</span>)}</div><div className="data-table-wrap"><table className="data-table"><thead><tr><th>Vị trí</th><th>Trạng thái</th><th>Đơn</th><th>Thao tác</th></tr></thead><tbody>{jobs.map((job) => <tr key={job.id}><td><strong>{job.title}</strong><small>{job.location || 'Chưa cập nhật'}</small>{job.status === 'REJECTED' && job.moderationNote && <em className="moderation-note">Lý do: {job.moderationNote}</em>}</td><td><span className={`status-pill ${job.status.toLowerCase()}`}>{jobStatuses[job.status]}</span></td><td>{job._count?.applications || 0}</td><td>  <button className="table-link" onClick={() => setEditingJob(job)}>Sửa</button>  <button className="table-link" onClick={() => setPipelineJob(job)}>Quy trình tuyển dụng</button><button className="table-link" onClick={() => showSuggestions(job)}>Gợi ý ứng viên</button>{job.status !== 'CLOSED' && <button className="table-link danger" onClick={() => recruiterApi.closeJob(job.id).then(load).catch((actionError) => setError(actionError.message))}>Đóng</button>}</td></tr>)}</tbody></table>    </div></>}  <SuggestedCandidates result={suggestedCandidates} onClose={() => setSuggestedCandidates(null)} onSearch={(jobId, params) => showSuggestions({ id: jobId }, params)} />{pipelineJob && <div className="pipeline-panel"><div className="section-heading"><h2>Quy trình tuyển dụng · {pipelineJob.title}</h2><button className="secondary-button" onClick={() => setPipelineJob(null)}>Đóng</button></div><JobPipeline job={pipelineJob} onError={setError} /></div>}</section> : section === 'applications' ? <section className="recruiter-card"><div className="section-heading"><h2>Quản lý ứng viên</h2><select value={applicationStatus} onChange={(event) => setApplicationStatus(event.target.value)}><option value="">Tất cả trạng thái</option>{Object.entries(applicationStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div><div className="data-table-wrap"><table className="data-table"><thead><tr><th>Ứng viên</th><th>Tin tuyển dụng</th><th>Trạng thái</th><th>Ngày nộp</th><th>Thao tác</th></tr></thead><tbody>{applications.map((application) => <tr key={application.id}><td><strong>{application.candidate.user.fullName}</strong><small>{application.candidate.user.email}</small></td><td>{application.job.title}</td><td><span className="status-pill">{applicationStatuses[application.status]}</span></td><td>{new Date(application.appliedAt).toLocaleDateString('vi-VN')}</td><td><button className="table-link" onClick={() => setSelectedApplication(application)}>Xem hồ sơ</button></td></tr>)}</tbody></table></div>{selectedApplication && <div className="candidate-detail"><button className="close-detail" onClick={() => setSelectedApplication(null)}>×</button><h2>{selectedApplication.candidate.user.fullName}</h2><p>{selectedApplication.candidate.user.email} · {selectedApplication.candidate.user.phone || 'Chưa có số điện thoại'}</p><p>{selectedApplication.candidate.headline || 'Chưa cập nhật tiêu đề hồ sơ'}</p><div className="candidate-skills">{selectedApplication.candidate.skills.map(({ skill }) => <span key={skill.id}>{skill.name}</span>)}</div>{selectedApplication.resume && <button className="secondary-button" onClick={() => recruiterApi.downloadResume(selectedApplication.resume.id, selectedApplication.resume.fileName).catch((actionError) => setError(actionError.message))}>Tải CV</button>}<div className="application-actions"><select id="application-status" defaultValue={selectedApplication.status}>{Object.entries(applicationStatuses).filter(([value]) => value !== 'APPLIED' && value !== 'WITHDRAWN').map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><textarea placeholder="Ghi chú cho ứng viên (tùy chọn)" id="application-note" /><button className="primary-button" onClick={() => updateApplication(selectedApplication, document.querySelector('#application-status')?.value || selectedApplication.status, document.querySelector('#application-note')?.value)}>Lưu trạng thái và ghi chú</button></div></div>}</section> : <section className="recruiter-card"><h2>Hồ sơ công ty</h2>{companyForm && <form className="recruiter-form" onSubmit={saveCompany}><div className="company-logo-row">{company?.logoUrl && <img src={`${ASSET_URL}${company.logoUrl}`} alt="" />}<label>Biểu trưng công ty<input type="file"   accept="image/png,image/jpeg" onChange={(event) => event.target.files[0] && recruiterApi.uploadLogo(event.target.files[0]).then(setCompany).catch((actionError) => setError(actionError.message))} /></label></div><div className="form-grid"><label>Tên công ty<input name="name" required defaultValue={companyForm.name} /></label>  <label>Trang web<input name="website" type="url" defaultValue={companyForm.website} /></label><label>Quy mô nhân sự<input name="employeeCount" type="number" min="0" defaultValue={companyForm.employeeCount} /></label><label>Ngành<input name="industry" defaultValue={companyForm.industry} /></label><label>Địa chỉ<input name="address" defaultValue={companyForm.address} /></label></div><label>Giới thiệu<textarea name="description" rows="6" defaultValue={companyForm.description} /></label><button className="primary-button">Lưu hồ sơ</button></form>}</section>}</section></main></AppShell>}
+  return <AppShell user={session.user} logout={logout}><main className="recruiter-shell"><aside className="recruiter-sidebar"><div className="recruiter-brand"><b>JC</b><span>Job Connect</span></div><div className="recruiter-profile"><div className="recruiter-avatar">{session.user.fullName?.charAt(0) || 'R'}</div><div><strong>{session.user.fullName}</strong><small>Nhà tuyển dụng</small></div></div><nav>{nav.map((item) => <button key={item.id} type="button" className={section === item.id ? 'active' : ''} aria-current={section === item.id ? 'page' : undefined} onClick={() => changeSection(item.id)}>{item.label}</button>)}</nav><button className="logout-button" onClick={logout}>Đăng xuất ↗</button></aside><section className="recruiter-main"><header className="recruiter-header"><div><p className="eyebrow">TRUNG TÂM TUYỂN DỤNG</p><h1>{nav.find((item) => item.id === section)?.label}</h1></div><button className="secondary-button" onClick={load}>↻ Làm mới</button></header>{error && <div className="recruiter-alert" role="alert">{error}</div>}{loading ? <div className="admin-loading">Đang tải dữ liệu...</div> : section === 'dashboard' && stats ? <Dashboard stats={stats} /> : section === 'jobs' ? <section className="recruiter-card">{editingJob ? <><h2>{editingJob.id ? 'Chỉnh sửa tin tuyển dụng' : 'Tạo tin tuyển dụng'}</h2>    <JobForm initialJob={editingJob.id ? editingJob : null} initialDraft={jobDraft} onDraftChange={setJobDraft} skills={skills} onSave={saveJob} onAutoSave={autoSaveJob} onSubmitForReview={submitJob} onSuggest={suggestDescription} onCancel={closeJobEditor} /></> : <><div className="section-heading"><h2>Danh sách tin tuyển dụng</h2><button className="primary-button" onClick={() => { setJobDraft(null); setEditingJob({}) }}>+ Tạo tin mới</button></div><div className="job-status-tabs">{Object.entries(jobStatuses).map(([status, label]) => <span key={status}>{label}: {stats?.jobsByStatus?.[status] || 0}</span>)}</div><div className="data-table-wrap"><table className="data-table"><thead><tr><th>Vị trí</th><th>Trạng thái</th><th>Đơn</th><th>Thao tác</th></tr></thead><tbody>{!jobs.length && !error && <tr><td colSpan="4" className="recruiter-jobs-empty"><strong>Bạn chưa có tin tuyển dụng nào.</strong><span>Chọn “Tạo tin mới” ở phía trên để tạo tin tuyển dụng đầu tiên.</span></td></tr>}{jobs.map((job) => <tr key={job.id}><td><strong>{job.title}</strong><small>{job.location || 'Chưa cập nhật'}</small>{job.status === 'REJECTED' && job.moderationNote && <em className="moderation-note">Lý do: {job.moderationNote}</em>}</td><td><span className={`status-pill ${job.status.toLowerCase()}`}>{jobStatuses[job.status]}</span></td><td>{job._count?.applications || 0}</td><td>  <button className="table-link" onClick={() => { setJobDraft(null); setEditingJob(job) }}>Sửa</button>  <button className="table-link" onClick={() => setPipelineJob(job)}>Quy trình tuyển dụng</button><button className="table-link" onClick={() => showSuggestions(job)}>Gợi ý ứng viên</button>{job.status !== 'CLOSED' && <button className="table-link danger" onClick={() => recruiterApi.closeJob(job.id).then(load).catch((actionError) => setError(actionError.message))}>Đóng</button>}</td></tr>)}</tbody></table>    </div></>}  <SuggestedCandidates result={suggestedCandidates} onClose={() => setSuggestedCandidates(null)} onSearch={(jobId, params) => showSuggestions({ id: jobId }, params)} />{pipelineJob && <div className="pipeline-panel"><div className="section-heading"><h2>Quy trình tuyển dụng · {pipelineJob.title}</h2><button className="secondary-button" onClick={() => setPipelineJob(null)}>Đóng</button></div><JobPipeline job={pipelineJob} onError={setError} /></div>}</section> : section === 'applications' ? <section className="recruiter-card"><div className="section-heading"><h2>Quản lý ứng viên</h2><select value={applicationStatus} onChange={(event) => setApplicationStatus(event.target.value)}><option value="">Tất cả trạng thái</option>{Object.entries(applicationStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div><div className="data-table-wrap"><table className="data-table"><thead><tr><th>Ứng viên</th><th>Tin tuyển dụng</th><th>Trạng thái</th><th>Ngày nộp</th><th>Thao tác</th></tr></thead><tbody>{applications.map((application) => <tr key={application.id}><td><strong>{application.candidate.user.fullName}</strong><small>{application.candidate.user.email}</small></td><td>{application.job.title}</td><td><span className="status-pill">{applicationStatuses[application.status]}</span></td><td>{new Date(application.appliedAt).toLocaleDateString('vi-VN')}</td><td><button className="table-link" onClick={() => setSelectedApplication(application)}>Xem hồ sơ</button></td></tr>)}</tbody></table></div>{selectedApplication && <div className="candidate-detail"><button className="close-detail" onClick={() => setSelectedApplication(null)}>×</button><h2>{selectedApplication.candidate.user.fullName}</h2><p>{selectedApplication.candidate.user.email} · {selectedApplication.candidate.user.phone || 'Chưa có số điện thoại'}</p><p>{selectedApplication.candidate.headline || 'Chưa cập nhật tiêu đề hồ sơ'}</p><div className="candidate-skills">{(selectedApplication.candidate.skills ?? []).map(({ skill }) => <span key={skill.id}>{skill.name}</span>)}</div>{selectedApplication.resume && <button className="secondary-button" onClick={() => recruiterApi.downloadResume(selectedApplication.resume.id, selectedApplication.resume.fileName).catch((actionError) => setError(actionError.message))}>Tải CV</button>}<div className="application-actions"><select id="application-status" defaultValue={selectedApplication.status}>{Object.entries(applicationStatuses).filter(([value]) => value !== 'APPLIED' && value !== 'WITHDRAWN').map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><textarea placeholder="Ghi chú cho ứng viên (tùy chọn)" id="application-note" /><button className="primary-button" onClick={() => updateApplication(selectedApplication, document.querySelector('#application-status')?.value || selectedApplication.status, document.querySelector('#application-note')?.value)}>Lưu trạng thái và ghi chú</button></div></div>}</section> : <section className="recruiter-card"><h2>Hồ sơ công ty</h2>{companyForm && <form className="recruiter-form" onSubmit={saveCompany}><div className="company-logo-row">{company?.logoUrl && <img src={`${ASSET_URL}${company.logoUrl}`} alt="" />}<label>Biểu trưng công ty<input type="file"   accept="image/png,image/jpeg" onChange={(event) => event.target.files[0] && recruiterApi.uploadLogo(event.target.files[0]).then(setCompany).catch((actionError) => setError(actionError.message))} /></label></div><div className="form-grid"><label>Tên công ty<input name="name" required defaultValue={companyForm.name} /></label>  <label>Trang web<input name="website" type="url" defaultValue={companyForm.website} /></label><label>Quy mô nhân sự<input name="employeeCount" type="number" min="0" defaultValue={companyForm.employeeCount} /></label><label>Ngành<input name="industry" defaultValue={companyForm.industry} /></label><label>Địa chỉ<input name="address" defaultValue={companyForm.address} /></label></div><label>Giới thiệu<textarea name="description" rows="6" defaultValue={companyForm.description} /></label><button className="primary-button">Lưu hồ sơ</button></form>}</section>}</section></main></AppShell>}

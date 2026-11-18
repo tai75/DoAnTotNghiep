@@ -1,7 +1,7 @@
 import { expect, request, test } from '@playwright/test'
+import { disposableAccounts, disposableEnvironment } from './support/disposable-env'
 
-const apiBase = 'http://127.0.0.1:5101'
-const password = process.env.QA01_PASSWORD
+const { apiBaseURL: apiBase, password } = disposableEnvironment()
 
 async function apiLogin(email) {
   const context = await request.newContext({ baseURL: apiBase })
@@ -12,7 +12,7 @@ async function apiLogin(email) {
 
 async function uiLogin(page) {
   await page.goto('/login')
-  await page.getByLabel('Email').fill('admin@jobconnect.local')
+  await page.getByLabel('Email').fill(disposableAccounts.admin)
   await page.getByLabel('Mật khẩu').fill(password)
   await page.locator('form.auth-form button[type="submit"]').click()
   await expect(page).toHaveURL(/\/admin/)
@@ -24,7 +24,7 @@ test.describe.serial('Quản trị và kiểm duyệt', () => {
     const registration = await candidateContext.post('/api/auth/register', { data: { email: `suspension-${Date.now()}@jobconnect.local`, password, fullName: 'QA Suspension Candidate', role: 'CANDIDATE' } })
     expect(registration.status()).toBe(201)
     const candidate = { context: candidateContext, token: (await registration.json()).data.token }
-    const admin = await apiLogin('admin@jobconnect.local')
+    const admin = await apiLogin(disposableAccounts.admin)
     const jobsResponse = await candidate.context.get('/api/jobs?limit=1', { headers: { Authorization: `Bearer ${candidate.token}` } })
     const job = (await jobsResponse.json()).data.items[0]
     const applicationResponse = await candidate.context.post(`/api/applications/jobs/${job.id}`, { headers: { Authorization: `Bearer ${candidate.token}` }, data: {} })
@@ -46,8 +46,8 @@ test.describe.serial('Quản trị và kiểm duyệt', () => {
   })
 
   test('chỉ một quản trị viên thắng khi kiểm duyệt đồng thời', async () => {
-    const recruiter = await apiLogin('recruiter@jobconnect.local')
-    const admin = await apiLogin('admin@jobconnect.local')
+    const recruiter = await apiLogin(disposableAccounts.recruiter)
+    const admin = await apiLogin(disposableAccounts.admin)
     const title = `QA đồng thời ${Date.now()}`
     const createdResponse = await recruiter.context.post('/api/jobs', { headers: { Authorization: `Bearer ${recruiter.token}` }, data: { title, description: 'Tin tuyển dụng tổng hợp dùng để kiểm tra khóa lạc quan trên QA.', location: 'Hồ Chí Minh', employmentType: 'FULL_TIME', deadline: '2030-12-31T00:00:00.000Z', status: 'DRAFT' } })
     expect(createdResponse.status()).toBe(201)
@@ -66,7 +66,7 @@ test.describe.serial('Quản trị và kiểm duyệt', () => {
   })
 
   test('nhận và xử lý báo cáo bằng dữ liệu QA', async ({ page }) => {
-    const candidate = await apiLogin('candidate@jobconnect.local')
+    const candidate = await apiLogin(disposableAccounts.candidate)
     const jobsResponse = await candidate.context.get('/api/jobs?limit=1', { headers: { Authorization: `Bearer ${candidate.token}` } })
     const jobs = (await jobsResponse.json()).data.items
     expect(jobs.length).toBeGreaterThan(0)

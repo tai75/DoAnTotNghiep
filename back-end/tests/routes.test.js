@@ -206,6 +206,17 @@ describe('route validation and authentication safeguards', () => {
     expect(responses[5].status).toBe(429)
   })
 
+  it('keeps the refresh limiter at 60 requests per window', async () => {
+    const limiterApp = express()
+    limiterApp.post('/', authRoutes.refreshRateLimit, (req, res) => res.json({ success: true }))
+
+    const responses = []
+    for (let index = 0; index < 61; index += 1) responses.push(await request(limiterApp).post('/'))
+
+    expect(responses.slice(0, 60).every((response) => response.status === 200)).toBe(true)
+    expect(responses[60].status).toBe(429)
+  })
+
   it('validates resume signatures and published saved jobs', () => {
     const filePath = path.join(os.tmpdir(), `job-connect-signature-${process.pid}.tmp`)
     try {

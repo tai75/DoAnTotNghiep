@@ -1,18 +1,18 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { PrismaClient } from '@prisma/client'
-import qaDatabase from '../../scripts/qa01-db.cjs'
+import e2eDatabase from '../../scripts/e2e-db.cjs'
 
-const enabled = process.env.RUN_INVITATION_QA_TESTS === '1'
-const { assertQaDatabase, resetBusinessData, seed } = qaDatabase
+const enabled = process.env.RUN_E2E_INVITATION_TESTS === '1'
+const { assertCanonicalDatabase, resetBusinessData, seed } = e2eDatabase
 
 describe.skipIf(!enabled)('QA real MySQL talent invitation concurrency', () => {
   let prisma, connectionA, connectionB, fixture
 
   beforeAll(async () => {
-    prisma = new PrismaClient({ datasourceUrl: process.env.QA01_DATABASE_URL })
-    connectionA = new PrismaClient({ datasourceUrl: process.env.QA01_DATABASE_URL })
-    connectionB = new PrismaClient({ datasourceUrl: process.env.QA01_DATABASE_URL })
-    await Promise.all([assertQaDatabase(prisma), assertQaDatabase(connectionA), assertQaDatabase(connectionB)])
+    prisma = new PrismaClient({ datasourceUrl: process.env.E2E_DATABASE_URL })
+    connectionA = new PrismaClient({ datasourceUrl: process.env.E2E_DATABASE_URL })
+    connectionB = new PrismaClient({ datasourceUrl: process.env.E2E_DATABASE_URL })
+    await Promise.all([assertCanonicalDatabase(prisma), assertCanonicalDatabase(connectionA), assertCanonicalDatabase(connectionB)])
   }, 30_000)
 
   beforeEach(async () => {

@@ -318,6 +318,7 @@ router.patch('/users/:id/status', validate(userStatusSchema), asyncHandler(async
       data: { userId: req.user.id, action: 'USER_STATUS_UPDATED', entity: 'User', entityId: user.id, metadata: { fromStatus: user.status, toStatus: req.body.status } }
     });
     await transaction.refreshToken.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: new Date() } });
+    await transaction.authSession.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: new Date() } });
     return result;
   });
   res.json({ success: true, data: updated });

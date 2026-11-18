@@ -1,0 +1,22 @@
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+
+const root = path.resolve(__dirname, '../..')
+const config = fs.readFileSync(path.join(root, 'playwright.disposable.config.js'), 'utf8')
+const reporter = fs.readFileSync(path.join(__dirname, 'secure-reporter.cjs'), 'utf8')
+const runner = fs.readFileSync(path.join(root, 'e2e/disposable-suite-runner.cjs'), 'utf8')
+
+assert.match(config, /trace:\s*'off'/)
+assert.match(config, /video:\s*'off'/)
+assert.match(config, /screenshot:\s*'off'/)
+assert.match(config, /retries:\s*0/)
+assert.match(config, /workers:\s*1/)
+assert.doesNotMatch(config, /\['json'/)
+assert.doesNotMatch(reporter, /result\.attachments/)
+assert.match(runner, /auditArtifactTree/)
+assert.match(runner, /runWhileCriticalChildrenAlive/)
+assert.match(runner, /stopOwned/)
+assert.match(runner, /protectDirectory/)
+
+console.log('PASS: fail-closed trace, reporter, execution, and ownership policy')

@@ -1,0 +1,746 @@
+{
+  "phase": "verify",
+  "results": [
+    {
+      "phase": "verify",
+      "scenario": "empty",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "valid",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "zero",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "missing",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "wrongType",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "invalidKpi",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "error403",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "error500",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "refreshError",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "oneStatus",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "loading",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "touch",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "empty",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "valid",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "zero",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "missing",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "wrongType",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "invalidKpi",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "error403",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "error500",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "refreshError",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "oneStatus",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "loading",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "touch",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "empty",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 768,
+        "height": 1024
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "valid",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 768,
+        "height": 1024
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "zero",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 768,
+        "height": 1024
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "missing",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 768,
+        "height": 1024
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "wrongType",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 768,
+        "height": 1024
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "invalidKpi",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 768,
+        "height": 1024
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "error403",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 768,
+        "height": 1024
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "error500",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 768,
+        "height": 1024
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "refreshError",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 768,
+        "height": 1024
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "oneStatus",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 768,
+        "height": 1024
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "loading",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 768,
+        "height": 1024
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "empty",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "valid",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "zero",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "missing",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "wrongType",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "invalidKpi",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "error403",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "error500",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "refreshError",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "oneStatus",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "loading",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "empty",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "valid",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "zero",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "missing",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "wrongType",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "invalidKpi",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "error403",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "error500",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "refreshError",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "oneStatus",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    },
+    {
+      "phase": "verify",
+      "scenario": "loading",
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "environment": "Chrome headless + Vite + API mock; không dùng backend/database thật",
+      "status": "PASS",
+      "horizontalOverflow": false
+    }
+  ]
+}

@@ -1,17 +1,16 @@
 import { expect, test } from '@playwright/test'
+import { disposableAccounts, disposableEnvironment } from './support/disposable-env'
 
 const accounts = {
-  candidate: { email: 'candidate@jobconnect.local', path: '/jobs' },
-  recruiter: { email: 'recruiter@jobconnect.local', path: '/recruiter' },
-  admin: { email: 'admin@jobconnect.local', path: '/admin' },
+  candidate: { email: disposableAccounts.candidate, path: '/jobs' },
+  recruiter: { email: disposableAccounts.recruiter, path: '/recruiter' },
+  admin: { email: disposableAccounts.admin, path: '/admin' },
 }
 
 for (const [role, account] of Object.entries(accounts)) {
   test(`${role}: UI login, refresh restore, logout`, async ({ page }, testInfo) => {
-    test.skip(process.env.QA_RUN_AUTH_SESSION !== '1', 'Opt-in because logout revokes every active refresh token for the user; run after authenticated suites.')
-    test.skip(testInfo.project.name !== 'desktop-1440', 'Authentication behavior is viewport-independent and runs once per role.')
-    const password = process.env.QA_PASSWORD
-    if (!password) throw new Error('QA_PASSWORD is required; do not hardcode it in the test suite.')
+    test.skip(testInfo.project.name !== 'disposable-auth-session', 'Authentication behavior runs only in the final disposable project.')
+    const { password } = disposableEnvironment()
 
     await page.goto('/login')
     await page.getByLabel('Email').fill(account.email)

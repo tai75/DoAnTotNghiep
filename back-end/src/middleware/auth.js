@@ -11,6 +11,18 @@ function recruiterCompanyAccess(company, requireVerified = false) {
   return { allowed: true };
 }
 
+async function accessSessionUser(payload, database = prisma, now = new Date()) {
+  if (typeof payload.sid !== 'string' || !payload.sid) return null;
+  const session = await database.authSession.findUnique({
+    where: { id: payload.sid },
+    include: { user: true }
+  });
+  const user = session?.user;
+  if (!session || session.userId !== payload.userId || session.revokedAt || session.expiresAt <= now
+    || !user || user.status !== 'ACTIVE' || user.tokenVersion !== (payload.tokenVersion || 0)) return null;
+  return { user, session };
+}
+
 async function authenticate(req, res, next) {
   const authorization = req.headers.authorization;
   const token = authorization && authorization.startsWith('Bearer ')
@@ -28,11 +40,12 @@ async function authenticate(req, res, next) {
     if (payload.sub !== String(payload.userId)) {
       return next(new ApiError(401, 'Token không hợp lệ hoặc đã hết hạn'));
     }
-    const user = await prisma.user.findUnique({ where: { id: payload.userId } });
-    if (!user || user.status !== 'ACTIVE' || user.tokenVersion !== (payload.tokenVersion || 0)) {
+    const authenticated = await accessSessionUser(payload);
+    if (!authenticated) {
       return next(new ApiError(401, 'Tài khoản không hợp lệ hoặc đã bị khóa'));
     }
-    req.user = user;
+    req.user = authenticated.user;
+    req.authSession = authenticated.session;
     next();
   } catch (error) {
     next(new ApiError(401, 'Token không hợp lệ hoặc đã hết hạn'));
@@ -97,4 +110,4 @@ async function requireVerifiedRecruiterCompany(req, res, next) {
   }
 }
 
-module.exports = { authenticate, authorize, requireActiveRecruiterCompany, requireVerifiedRecruiterCompany, recruiterCompanyAccess };
+module.exports = { authenticate, authorize, requireActiveRecruiterCompany, requireVerifiedRecruiterCompany, recruiterCompanyAccess, accessSessionUser };

@@ -1,4 +1,18 @@
 :root {
+  --font-family: 'Be Vietnam Pro', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --type-hero: clamp(2.5rem, 2.05rem + 1.6vw, 3.25rem);
+  --type-page: clamp(1.875rem, 1.7rem + .75vw, 2.25rem);
+  --type-section: clamp(1.375rem, 1.25rem + .45vw, 1.625rem);
+  --type-card: 1.125rem;
+  --type-body: 1rem;
+  --type-navigation: .875rem;
+  --type-form-label: .875rem;
+  --type-button: .875rem;
+  --type-caption: .8125rem;
+  --type-metric: clamp(1.875rem, 1.75rem + .5vw, 2.125rem);
+  font-family: var(--font-family);
+  font-size: var(--type-body);
+  line-height: 1.5;
   --color-primary: #2563eb;
   --color-primary-strong: #1d4ed8;
   --color-primary-soft: #eff6ff;
@@ -22,9 +36,12 @@
   --space-6: 24px;
   --space-8: 32px;
   --space-10: 40px;
-  --font-xs: 12px;
-  --font-sm: 14px;
-  --font-md: 16px;
-  --font-lg: 20px;
-  --font-xl: 28px;
+  --font-xs: .75rem;
+  --font-sm: .875rem;
+  --font-md: 1rem;
+  --font-lg: 1.25rem;
+  --font-xl: 1.75rem;
 }
+
+.recharts-wrapper text,
+.recharts-default-tooltip { font-family: var(--font-family); }

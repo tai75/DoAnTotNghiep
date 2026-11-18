@@ -1,0 +1,219 @@
+{
+  "results": [
+    {
+      "name": "navigation-scroll",
+      "viewport": {
+        "width": 360,
+        "height": 800
+      },
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "environment": "Chrome headless + Vite localhost + API mock",
+      "status": "PASS",
+      "geometry": {
+        "scrollY": 2624,
+        "maxScroll": 2624,
+        "navVisible": true,
+        "navTop": 728,
+        "navBottom": 800,
+        "pendingBottom": 636,
+        "sidebarRight": -12.20001220703125,
+        "overflow": false
+      }
+    },
+    {
+      "name": "navigation-scroll",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "environment": "Chrome headless + Vite localhost + API mock",
+      "status": "PASS",
+      "geometry": {
+        "scrollY": 2580,
+        "maxScroll": 2580,
+        "navVisible": true,
+        "navTop": 772,
+        "navBottom": 844,
+        "pendingBottom": 680,
+        "sidebarRight": -12.20001220703125,
+        "overflow": false
+      }
+    },
+    {
+      "name": "navigation-scroll",
+      "viewport": {
+        "width": 768,
+        "height": 1024
+      },
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "environment": "Chrome headless + Vite localhost + API mock",
+      "status": "PASS",
+      "geometry": {
+        "scrollY": 1833,
+        "maxScroll": 1833,
+        "navVisible": false,
+        "navTop": 0,
+        "navBottom": 0,
+        "pendingBottom": 954.09375,
+        "sidebarRight": 204,
+        "overflow": false
+      }
+    },
+    {
+      "name": "navigation-scroll",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "environment": "Chrome headless + Vite localhost + API mock",
+      "status": "PASS",
+      "geometry": {
+        "scrollY": 1795,
+        "maxScroll": 1795,
+        "navVisible": false,
+        "navTop": 0,
+        "navBottom": 0,
+        "pendingBottom": 698.21875,
+        "sidebarRight": 244,
+        "overflow": false
+      }
+    },
+    {
+      "name": "navigation-scroll",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "environment": "Chrome headless + Vite localhost + API mock",
+      "status": "PASS",
+      "geometry": {
+        "scrollY": 1172,
+        "maxScroll": 1172,
+        "navVisible": false,
+        "navTop": 0,
+        "navBottom": 0,
+        "pendingBottom": 830,
+        "sidebarRight": 244,
+        "overflow": false
+      }
+    },
+    {
+      "name": "loading-valid",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "environment": "Chrome headless + Vite localhost + API mock",
+      "status": "PASS"
+    },
+    {
+      "name": "loading-zero",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "environment": "Chrome headless + Vite localhost + API mock",
+      "status": "PASS"
+    },
+    {
+      "name": "loading-invalid",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "environment": "Chrome headless + Vite localhost + API mock",
+      "status": "PASS"
+    },
+    {
+      "name": "loading-error",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "environment": "Chrome headless + Vite localhost + API mock",
+      "status": "PASS"
+    },
+    {
+      "name": "retry-valid",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "environment": "Chrome headless + Vite localhost + API mock",
+      "status": "PASS"
+    },
+    {
+      "name": "loading-valid",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "environment": "Chrome headless + Vite localhost + API mock",
+      "status": "PASS"
+    },
+    {
+      "name": "loading-zero",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "environment": "Chrome headless + Vite localhost + API mock",
+      "status": "PASS"
+    },
+    {
+      "name": "loading-invalid",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "environment": "Chrome headless + Vite localhost + API mock",
+      "status": "PASS"
+    },
+    {
+      "name": "loading-error",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "environment": "Chrome headless + Vite localhost + API mock",
+      "status": "PASS"
+    },
+    {
+      "name": "retry-valid",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "route": "/admin?section=overview",
+      "role": "ADMIN",
+      "environment": "Chrome headless + Vite localhost + API mock",
+      "status": "PASS"
+    }
+  ]
+}

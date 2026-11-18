@@ -53,6 +53,7 @@ if (nodeEnv === 'production' && (!process.env.STORAGE_ROOT || !path.isAbsolute(p
 module.exports = {
   nodeEnv,
   port: Number(process.env.PORT || 5000),
+  bindHost: process.env.BIND_HOST || undefined,
   jwtSecret: process.env.JWT_SECRET,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '15m',
   jwtIssuer: process.env.JWT_ISSUER || 'job-connect-api',

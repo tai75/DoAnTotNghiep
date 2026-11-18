@@ -71,7 +71,7 @@ export default function NotificationCenter({ user }) {
   }
 
   return <div className="app-notification-wrap">
-    <button ref={bellRef} type="button" className="app-action-button" aria-label={`Thông báo${unreadCount ? `, ${unreadCount} chưa đọc` : ''}`} aria-haspopup="dialog" aria-expanded={open} onClick={() => open ? setOpen(false) : openCenter()}><span aria-hidden="true">♢</span>{unreadCount > 0 && <b>{unreadCount > 99 ? '99+' : unreadCount}</b>}</button>
+    <button ref={bellRef} type="button" className="app-action-button" aria-label={`Thông báo${unreadCount ? `, ${unreadCount} chưa đọc` : ''}`} title="Thông báo" aria-haspopup="dialog" aria-expanded={open} onClick={() => open ? setOpen(false) : openCenter()}><span aria-hidden="true">♢</span>{unreadCount > 0 && <b>{unreadCount > 99 ? '99+' : unreadCount}</b>}</button>
     {open && <div className="notification-layer">
       <button className="notification-overlay" type="button" aria-label="Đóng thông báo" onClick={() => setOpen(false)} />
       <section ref={panelRef} className="app-notification-popover" role="dialog" aria-modal="true" aria-labelledby="notification-title">

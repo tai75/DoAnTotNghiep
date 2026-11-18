@@ -30,6 +30,9 @@ function refreshDatabase(stored, claimedCount = 1) {
       updateMany: vi.fn().mockResolvedValue({ count: claimedCount }),
       create: vi.fn().mockResolvedValue({ id: 2 })
     },
+    authSession: {
+      updateMany: vi.fn().mockResolvedValue({ count: 1 })
+    },
     user: { update: vi.fn().mockResolvedValue({}) }
   }
   return {
@@ -74,13 +77,16 @@ describe('security hardening', () => {
     const stored = {
       id: 1,
       userId: 7,
+      sessionId: 'session-a',
       revokedAt: null,
       expiresAt: new Date(Date.now() + 60_000),
+      session: { id: 'session-a', userId: 7, revokedAt: null, expiresAt: new Date(Date.now() + 60_000) },
       user: { id: 7, role: 'CANDIDATE', status: 'ACTIVE', tokenVersion: 0 }
     }
     const { database, transaction } = refreshDatabase(stored, 1)
     const result = await authRoutes.rotateRefreshToken('old-refresh-token', database, new Date())
     expect(result.status).toBe('ok')
+    expect(result.sessionId).toBe('session-a')
     expect(result.refreshToken).not.toBe('old-refresh-token')
     expect(transaction.refreshToken.create).toHaveBeenCalledOnce()
     expect(transaction.user.update).not.toHaveBeenCalled()
@@ -90,18 +96,21 @@ describe('security hardening', () => {
     const stored = {
       id: 1,
       userId: 7,
+      sessionId: 'session-a',
       revokedAt: null,
       expiresAt: new Date(Date.now() + 60_000),
+      session: { id: 'session-a', userId: 7, revokedAt: null, expiresAt: new Date(Date.now() + 60_000) },
       user: { id: 7, role: 'CANDIDATE', status: 'ACTIVE', tokenVersion: 0 }
     }
     const { database, transaction } = refreshDatabase(stored, 0)
     const result = await authRoutes.rotateRefreshToken('replayed-refresh-token', database, new Date())
     expect(result.status).toBe('replay')
     expect(transaction.refreshToken.updateMany).toHaveBeenCalledTimes(2)
-    expect(transaction.user.update).toHaveBeenCalledWith({
-      where: { id: 7 },
-      data: { tokenVersion: { increment: 1 } }
+    expect(transaction.authSession.updateMany).toHaveBeenCalledWith({
+      where: { id: 'session-a', userId: 7, revokedAt: null },
+      data: { revokedAt: expect.any(Date) }
     })
+    expect(transaction.user.update).not.toHaveBeenCalled()
     expect(transaction.refreshToken.create).not.toHaveBeenCalled()
   })
 

@@ -1,12 +1,8 @@
 import { expect, request, test } from '@playwright/test'
+import { disposableAccounts, disposableEnvironment } from './support/disposable-env'
 
-const apiBase = 'http://127.0.0.1:5101'
-const password = process.env.QA01_PASSWORD
-const accounts = {
-  candidate: 'candidate@jobconnect.local',
-  recruiter: 'recruiter@jobconnect.local',
-  admin: 'admin@jobconnect.local',
-}
+const { apiBaseURL: apiBase, password } = disposableEnvironment()
+const accounts = disposableAccounts
 
 async function login(role) {
   const context = await request.newContext({ baseURL: apiBase })
@@ -104,7 +100,7 @@ test.describe.serial('QA-01 isolated authenticated E2E', () => {
     const recruiter = await login('recruiter')
     const admin = await login('admin')
     const candidate = await login('candidate')
-    const title = 'QA-01 Isolated Full-stack Engineer'
+    const title = 'QA-03 Kỹ sư phần mềm toàn diện'
 
     const createdResponse = await recruiter.context.post('/api/jobs', {
       headers: authorization(recruiter.token),
@@ -170,7 +166,7 @@ test.describe.serial('QA-01 isolated authenticated E2E', () => {
   test('recruiter sends invitation, candidate accepts in inbox, recruiter sees updated status', async ({ page }) => {
     const recruiter = await login('recruiter')
     const jobs = await json(await recruiter.context.get('/api/jobs/me', { headers: authorization(recruiter.token) }))
-    const job = jobs.find((item) => item.title === 'QA-01 Existing Backend Engineer' && item.status === 'PUBLISHED')
+    const job = jobs.find((item) => item.title === 'Kỹ sư phần mềm kiểm thử' && item.status === 'PUBLISHED')
     expect(job).toBeTruthy()
     const talent = await json(await recruiter.context.get(`/api/recruiters/talent?jobId=${job.id}`, { headers: authorization(recruiter.token) }))
     const candidate = talent.items.find((item) => !item.applied && !item.invitation)

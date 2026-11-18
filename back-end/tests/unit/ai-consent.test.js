@@ -107,11 +107,27 @@ describe('durable AI consent permits', () => {
 
   it('bounds a provider that ignores abort and marks ambiguity conservatively', async () => {
     const fake = createAiPermitFake([consent()]);
-    const now = Date.now();
+    const provider = vi.fn(() => new Promise(() => {}));
     await expect(executeWithConsent({ actorUserId: 10, scope: 'AI_CHAT' }, () => outboundAiRequest(
-      () => new Promise(() => {}), { client: fake.client, deadlineAt: now + 5 }
+      provider, { client: fake.client, deadlineAt: Date.now() + 1000 }
     ), fake.client)).rejects.toMatchObject({ name: 'AbortError' });
+    expect(provider).toHaveBeenCalledOnce();
     expect(fake.state.permits[0].status).toBe('TIMED_OUT_UNCONFIRMED');
+  });
+
+  it('does not transmit if the claimed permit lease has expired before outbound', async () => {
+    const fake = createAiPermitFake([consent()]);
+    const findUnique = fake.client.aiTransmissionPermit.findUnique;
+    fake.client.aiTransmissionPermit.findUnique = vi.fn(async (...args) => {
+      const permit = await findUnique(...args);
+      return { ...permit, leaseExpiresAt: new Date(1) };
+    });
+    const provider = vi.fn();
+    await expect(executeWithConsent({ actorUserId: 10, scope: 'AI_CHAT' },
+      () => outboundAiRequest(provider, { client: fake.client }), fake.client))
+      .rejects.toMatchObject({ name: 'AiConsentError', code: 'ai_permit_lease_lost' });
+    expect(provider).not.toHaveBeenCalled();
+    expect(fake.state.permits[0].status).toBe('FAILED');
   });
 
   it('preserves provider error and reports lifecycle persistence failure without retry', async () => {

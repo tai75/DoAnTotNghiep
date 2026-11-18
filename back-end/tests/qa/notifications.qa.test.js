@@ -3,11 +3,11 @@ import { PrismaClient } from '@prisma/client'
 import jwt from 'jsonwebtoken'
 import request from 'supertest'
 import appModule from '../../src/app.js'
-import qaDatabase from '../../scripts/qa01-db.cjs'
+import e2eDatabase from '../../scripts/e2e-db.cjs'
 
-const enabled = process.env.RUN_NOTIFICATION_QA_TESTS === '1'
+const enabled = process.env.RUN_E2E_NOTIFICATION_TESTS === '1'
 const app = appModule.default || appModule
-const { assertQaDatabase, resetBusinessData, seed } = qaDatabase
+const { assertCanonicalDatabase, resetBusinessData, seed } = e2eDatabase
 
 describe.skipIf(!enabled)('QA real MySQL notifications', () => {
   let prisma
@@ -21,9 +21,9 @@ describe.skipIf(!enabled)('QA real MySQL notifications', () => {
   }
 
   beforeAll(async () => {
-    prisma = new PrismaClient({ datasourceUrl: process.env.QA01_DATABASE_URL })
+    prisma = new PrismaClient({ datasourceUrl: process.env.E2E_DATABASE_URL })
     globalThis.__JOB_CONNECT_TEST_PRISMA__ = prisma
-    await assertQaDatabase(prisma)
+    await assertCanonicalDatabase(prisma)
   }, 30_000)
 
   beforeEach(async () => {

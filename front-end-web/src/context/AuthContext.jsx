@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { authApi, setAccessToken, setUnauthorizedHandler } from '../services/api'
 import { AuthContext } from './auth'
+import { endCurrentSession } from './logoutSession'
 
 let restoreSessionPromise = null
 
@@ -16,6 +17,7 @@ function restoreSession() {
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [logoutFailure, setLogoutFailure] = useState(null)
 
   const clearSession = useCallback(() => {
     setAccessToken(null)
@@ -46,18 +48,20 @@ export function AuthProvider({ children }) {
 
   const login = useCallback(async (payload, isRegister = false) => {
     const data = isRegister ? await authApi.register(payload) : await authApi.login(payload)
+    setLogoutFailure(null)
     setAccessToken(data.token)
     setSession({ user: data.user })
+    return data.user
   }, [])
 
   const logout = useCallback(async () => {
-    try {
-      if (session) await authApi.logout()
-    } catch (error) {
-      console.error('Không thể đăng xuất trên máy chủ:', error)
-    } finally {
-      clearSession()
-    }
+    const result = await endCurrentSession({
+      hasSession: Boolean(session),
+      logoutRequest: authApi.logout,
+      clearSession
+    })
+    setLogoutFailure(result.ok ? null : result)
+    return result
   }, [clearSession, session])
 
   const updateSessionUser = useCallback((user) => {
@@ -67,11 +71,12 @@ export function AuthProvider({ children }) {
   const value = useMemo(() => ({
     session,
     isLoading,
+    logoutFailure,
     login,
     logout,
     clearSession,
     updateSessionUser
-  }), [session, isLoading, login, logout, clearSession, updateSessionUser])
+  }), [session, isLoading, logoutFailure, login, logout, clearSession, updateSessionUser])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

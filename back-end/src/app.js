@@ -3,7 +3,6 @@ const path = require('path');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
-const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
 const config = require('./config/env');
 const prisma = require('./config/prisma');
@@ -21,6 +20,7 @@ const recruitersRoutes = require('./routes/recruiters.routes');
 const recommendationsRoutes = require('./routes/recommendations.routes');
 const conversationsRoutes = require('./routes/conversations.routes');
 const storageRoutes = require('./routes/storage.routes');
+const { createGlobalApiRateLimit } = require('./middleware/globalApiRateLimit');
 const interviewsRoutes = require('./routes/interviews.routes');
 const reportsRoutes = require('./routes/reports.routes');
 const aiConsentRoutes = require('./routes/aiConsent.routes');
@@ -45,13 +45,7 @@ app.use(cors({
   allowedHeaders: ['Authorization', 'Content-Type', 'X-Request-Id'],
   maxAge: 600
 }));
-app.use('/api', rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: config.apiRateLimitMax,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { success: false, message: 'Quá nhiều yêu cầu, vui lòng thử lại sau.' }
-}));
+app.use('/api', createGlobalApiRateLimit());
 app.use(express.json({ limit: '2mb' }));
 morgan.token('safe-path', (req) => req.path);
 app.use(morgan(':method :safe-path :status :response-time ms'));

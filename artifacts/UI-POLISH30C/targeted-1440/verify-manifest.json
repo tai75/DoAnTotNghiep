@@ -1,0 +1,630 @@
+{
+  "environment": "Chrome headless + Vite preview + API mock; không dùng backend/database/Gemini/SMTP",
+  "phase": "verify",
+  "results": [
+    {
+      "phase": "verify",
+      "case": "dashboard-recruiter-empty",
+      "route": "/recruiter?section=dashboard",
+      "role": "RECRUITER",
+      "width": 1440,
+      "data": "API mock: rỗng",
+      "status": "PASS",
+      "measure": {
+        "title": "Job Connect",
+        "font": "\"Be Vietnam Pro\", system-ui, -apple-system, \"Segoe UI\", sans-serif",
+        "horizontalOverflow": false,
+        "nav": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0,
+          "bottom": 0
+        },
+        "contentPaddingBottom": 0,
+        "appContent": {
+          "x": 0,
+          "y": 66,
+          "width": 1440,
+          "height": 951.5,
+          "bottom": 1017.5
+        },
+        "last": "MAIN",
+        "safeArea": "0px",
+        "detail": null,
+        "chartCount": 0,
+        "chartEmptyCount": 3,
+        "emptyStateCount": 0,
+        "headerLabels": [
+          {
+            "text": "♢",
+            "aria": "Thông báo",
+            "title": "Thông báo"
+          },
+          {
+            "text": "✉",
+            "aria": "Tin nhắn",
+            "title": "Tin nhắn"
+          },
+          {
+            "text": "NNgười dùng kiểm thử⌄",
+            "aria": "Mở menu tài khoản",
+            "title": "Mở menu tài khoản"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "verify",
+      "case": "tim-viec-empty",
+      "route": "/jobs",
+      "role": "GUEST",
+      "width": 1440,
+      "data": "API mock: rỗng",
+      "status": "PASS",
+      "measure": {
+        "title": "Tìm việc làm — Job Connect",
+        "font": "\"Be Vietnam Pro\", system-ui, -apple-system, \"Segoe UI\", sans-serif",
+        "horizontalOverflow": false,
+        "nav": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0,
+          "bottom": 0
+        },
+        "contentPaddingBottom": 0,
+        "appContent": {
+          "x": 0,
+          "y": 66,
+          "width": 1440,
+          "height": 1127.78125,
+          "bottom": 1193.78125
+        },
+        "last": "FOOTER",
+        "safeArea": "0px",
+        "detail": {
+          "x": 570,
+          "y": 400.5,
+          "width": 750,
+          "height": 136,
+          "bottom": 536.5
+        },
+        "chartCount": 0,
+        "chartEmptyCount": 0,
+        "emptyStateCount": 2,
+        "headerLabels": [
+          {
+            "text": "Đăng nhập",
+            "aria": null,
+            "title": null
+          },
+          {
+            "text": "Đăng ký",
+            "aria": null,
+            "title": null
+          }
+        ]
+      }
+    },
+    {
+      "phase": "verify",
+      "case": "ho-so-candidate",
+      "route": "/profile",
+      "role": "CANDIDATE",
+      "width": 1440,
+      "data": "API mock: rỗng",
+      "status": "PASS",
+      "measure": {
+        "title": "Job Connect",
+        "font": "\"Be Vietnam Pro\", system-ui, -apple-system, \"Segoe UI\", sans-serif",
+        "horizontalOverflow": false,
+        "nav": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0,
+          "bottom": 0
+        },
+        "contentPaddingBottom": 0,
+        "appContent": {
+          "x": 0,
+          "y": 66,
+          "width": 1440,
+          "height": 967.984375,
+          "bottom": 1033.984375
+        },
+        "last": "MAIN",
+        "safeArea": "0px",
+        "detail": null,
+        "chartCount": 0,
+        "chartEmptyCount": 0,
+        "emptyStateCount": 0,
+        "headerLabels": [
+          {
+            "text": "♢",
+            "aria": "Thông báo",
+            "title": "Thông báo"
+          },
+          {
+            "text": "✉",
+            "aria": "Tin nhắn",
+            "title": "Tin nhắn"
+          },
+          {
+            "text": "NNgười dùng kiểm thử⌄",
+            "aria": "Mở menu tài khoản",
+            "title": "Mở menu tài khoản"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "verify",
+      "case": "form-recruiter",
+      "route": "/recruiter?section=jobs",
+      "role": "RECRUITER",
+      "width": 1440,
+      "data": "API mock: rỗng",
+      "status": "PASS",
+      "measure": {
+        "title": "Job Connect",
+        "font": "\"Be Vietnam Pro\", system-ui, -apple-system, \"Segoe UI\", sans-serif",
+        "horizontalOverflow": false,
+        "nav": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0,
+          "bottom": 0
+        },
+        "contentPaddingBottom": 0,
+        "appContent": {
+          "x": 0,
+          "y": 66,
+          "width": 1440,
+          "height": 900,
+          "bottom": 966
+        },
+        "last": "MAIN",
+        "safeArea": "0px",
+        "detail": null,
+        "chartCount": 0,
+        "chartEmptyCount": 0,
+        "emptyStateCount": 0,
+        "headerLabels": [
+          {
+            "text": "♢",
+            "aria": "Thông báo",
+            "title": "Thông báo"
+          },
+          {
+            "text": "✉",
+            "aria": "Tin nhắn",
+            "title": "Tin nhắn"
+          },
+          {
+            "text": "NNgười dùng kiểm thử⌄",
+            "aria": "Mở menu tài khoản",
+            "title": "Mở menu tài khoản"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "verify",
+      "case": "dashboard-admin",
+      "route": "/admin",
+      "role": "ADMIN",
+      "width": 1440,
+      "data": "API mock: rỗng",
+      "status": "PASS",
+      "measure": {
+        "title": "Job Connect",
+        "font": "\"Be Vietnam Pro\", system-ui, -apple-system, \"Segoe UI\", sans-serif",
+        "horizontalOverflow": false,
+        "nav": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0,
+          "bottom": 0
+        },
+        "contentPaddingBottom": 0,
+        "appContent": {
+          "x": 0,
+          "y": 66,
+          "width": 1440,
+          "height": 900,
+          "bottom": 966
+        },
+        "last": "MAIN",
+        "safeArea": "0px",
+        "detail": null,
+        "chartCount": 0,
+        "chartEmptyCount": 0,
+        "emptyStateCount": 1,
+        "headerLabels": [
+          {
+            "text": "♢",
+            "aria": "Thông báo",
+            "title": "Thông báo"
+          },
+          {
+            "text": "NNgười dùng kiểm thử⌄",
+            "aria": "Mở menu tài khoản",
+            "title": "Mở menu tài khoản"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "verify",
+      "case": "dashboard-recruiter-data",
+      "route": "/recruiter?section=dashboard",
+      "role": "RECRUITER",
+      "width": 1440,
+      "data": "API mock: có dữ liệu",
+      "status": "PASS",
+      "measure": {
+        "title": "Job Connect",
+        "font": "\"Be Vietnam Pro\", system-ui, -apple-system, \"Segoe UI\", sans-serif",
+        "horizontalOverflow": false,
+        "nav": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0,
+          "bottom": 0
+        },
+        "contentPaddingBottom": 0,
+        "appContent": {
+          "x": 0,
+          "y": 66,
+          "width": 1440,
+          "height": 1317,
+          "bottom": 1383
+        },
+        "last": "MAIN",
+        "safeArea": "0px",
+        "detail": null,
+        "chartCount": 3,
+        "chartEmptyCount": 0,
+        "emptyStateCount": 0,
+        "headerLabels": [
+          {
+            "text": "♢",
+            "aria": "Thông báo",
+            "title": "Thông báo"
+          },
+          {
+            "text": "✉",
+            "aria": "Tin nhắn",
+            "title": "Tin nhắn"
+          },
+          {
+            "text": "NNgười dùng kiểm thử⌄",
+            "aria": "Mở menu tài khoản",
+            "title": "Mở menu tài khoản"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "verify",
+      "case": "tim-viec-data",
+      "route": "/jobs/7",
+      "role": "GUEST",
+      "width": 1440,
+      "data": "API mock: có dữ liệu",
+      "status": "PASS",
+      "measure": {
+        "title": "Kỹ sư phần mềm — Job Connect",
+        "font": "\"Be Vietnam Pro\", system-ui, -apple-system, \"Segoe UI\", sans-serif",
+        "horizontalOverflow": false,
+        "nav": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0,
+          "bottom": 0
+        },
+        "contentPaddingBottom": 0,
+        "appContent": {
+          "x": 0,
+          "y": 66,
+          "width": 1440,
+          "height": 1400.28125,
+          "bottom": 1466.28125
+        },
+        "last": "FOOTER",
+        "safeArea": "0px",
+        "detail": {
+          "x": 570,
+          "y": 400.5,
+          "width": 750,
+          "height": 742,
+          "bottom": 1142.5
+        },
+        "chartCount": 0,
+        "chartEmptyCount": 0,
+        "emptyStateCount": 0,
+        "headerLabels": [
+          {
+            "text": "Đăng nhập",
+            "aria": null,
+            "title": null
+          },
+          {
+            "text": "Đăng ký",
+            "aria": null,
+            "title": null
+          }
+        ]
+      }
+    },
+    {
+      "phase": "verify",
+      "case": "trang-chu",
+      "route": "/",
+      "role": "GUEST",
+      "width": 1440,
+      "data": "API mock: rỗng",
+      "status": "PASS",
+      "measure": {
+        "title": "Job Connect — Kết nối việc làm phù hợp",
+        "font": "\"Be Vietnam Pro\", system-ui, -apple-system, \"Segoe UI\", sans-serif",
+        "horizontalOverflow": false,
+        "nav": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0,
+          "bottom": 0
+        },
+        "contentPaddingBottom": 0,
+        "appContent": {
+          "x": 0,
+          "y": 66,
+          "width": 1440,
+          "height": 2644.9375,
+          "bottom": 2710.9375
+        },
+        "last": "FOOTER",
+        "safeArea": "0px",
+        "detail": null,
+        "chartCount": 0,
+        "chartEmptyCount": 0,
+        "emptyStateCount": 3,
+        "headerLabels": [
+          {
+            "text": "Đăng nhập",
+            "aria": null,
+            "title": null
+          },
+          {
+            "text": "Đăng ký",
+            "aria": null,
+            "title": null
+          }
+        ]
+      }
+    },
+    {
+      "phase": "verify",
+      "case": "chat-candidate",
+      "route": "/jobs",
+      "role": "CANDIDATE",
+      "width": 1440,
+      "data": "API mock: rỗng",
+      "status": "PASS",
+      "measure": {
+        "title": "Tìm việc làm — Job Connect",
+        "font": "\"Be Vietnam Pro\", system-ui, -apple-system, \"Segoe UI\", sans-serif",
+        "horizontalOverflow": false,
+        "nav": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0,
+          "bottom": 0
+        },
+        "contentPaddingBottom": 0,
+        "appContent": {
+          "x": 0,
+          "y": 66,
+          "width": 1440,
+          "height": 1173.78125,
+          "bottom": 1239.78125
+        },
+        "last": "FOOTER",
+        "safeArea": "0px",
+        "detail": {
+          "x": 570,
+          "y": 400.5,
+          "width": 750,
+          "height": 136,
+          "bottom": 536.5
+        },
+        "chartCount": 0,
+        "chartEmptyCount": 0,
+        "emptyStateCount": 2,
+        "headerLabels": [
+          {
+            "text": "♢",
+            "aria": "Thông báo",
+            "title": "Thông báo"
+          },
+          {
+            "text": "✉",
+            "aria": "Tin nhắn",
+            "title": "Tin nhắn"
+          },
+          {
+            "text": "NNgười dùng kiểm thử⌄",
+            "aria": "Mở menu tài khoản",
+            "title": "Mở menu tài khoản"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "verify",
+      "case": "form-recruiter-data",
+      "route": "/recruiter?section=jobs",
+      "role": "RECRUITER",
+      "width": 1440,
+      "data": "API mock: có dữ liệu",
+      "status": "PASS",
+      "measure": {
+        "title": "Job Connect",
+        "font": "\"Be Vietnam Pro\", system-ui, -apple-system, \"Segoe UI\", sans-serif",
+        "horizontalOverflow": false,
+        "nav": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0,
+          "bottom": 0
+        },
+        "contentPaddingBottom": 0,
+        "appContent": {
+          "x": 0,
+          "y": 66,
+          "width": 1440,
+          "height": 900,
+          "bottom": 966
+        },
+        "last": "MAIN",
+        "safeArea": "0px",
+        "detail": null,
+        "chartCount": 0,
+        "chartEmptyCount": 0,
+        "emptyStateCount": 0,
+        "headerLabels": [
+          {
+            "text": "♢",
+            "aria": "Thông báo",
+            "title": "Thông báo"
+          },
+          {
+            "text": "✉",
+            "aria": "Tin nhắn",
+            "title": "Tin nhắn"
+          },
+          {
+            "text": "NNgười dùng kiểm thử⌄",
+            "aria": "Mở menu tài khoản",
+            "title": "Mở menu tài khoản"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "verify",
+      "case": "tim-viec-filtered",
+      "route": "/jobs?search=khong-co-ket-qua",
+      "role": "GUEST",
+      "width": 1440,
+      "data": "API mock: rỗng",
+      "status": "PASS",
+      "measure": {
+        "title": "Tìm việc làm — Job Connect",
+        "font": "\"Be Vietnam Pro\", system-ui, -apple-system, \"Segoe UI\", sans-serif",
+        "horizontalOverflow": false,
+        "nav": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0,
+          "bottom": 0
+        },
+        "contentPaddingBottom": 0,
+        "appContent": {
+          "x": 0,
+          "y": 66,
+          "width": 1440,
+          "height": 1127.78125,
+          "bottom": 1193.78125
+        },
+        "last": "FOOTER",
+        "safeArea": "0px",
+        "detail": {
+          "x": 570,
+          "y": 400.5,
+          "width": 750,
+          "height": 136,
+          "bottom": 536.5
+        },
+        "chartCount": 0,
+        "chartEmptyCount": 0,
+        "emptyStateCount": 2,
+        "headerLabels": [
+          {
+            "text": "Đăng nhập",
+            "aria": null,
+            "title": null
+          },
+          {
+            "text": "Đăng ký",
+            "aria": null,
+            "title": null
+          }
+        ]
+      }
+    },
+    {
+      "phase": "verify",
+      "case": "tim-viec-error",
+      "route": "/jobs",
+      "role": "GUEST",
+      "width": 1440,
+      "data": "API mock: rỗng",
+      "status": "PASS",
+      "measure": {
+        "title": "Tìm việc làm — Job Connect",
+        "font": "\"Be Vietnam Pro\", system-ui, -apple-system, \"Segoe UI\", sans-serif",
+        "horizontalOverflow": false,
+        "nav": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0,
+          "bottom": 0
+        },
+        "contentPaddingBottom": 0,
+        "appContent": {
+          "x": 0,
+          "y": 66,
+          "width": 1440,
+          "height": 1127.78125,
+          "bottom": 1193.78125
+        },
+        "last": "FOOTER",
+        "safeArea": "0px",
+        "detail": {
+          "x": 570,
+          "y": 482.5,
+          "width": 750,
+          "height": 136,
+          "bottom": 618.5
+        },
+        "chartCount": 0,
+        "chartEmptyCount": 0,
+        "emptyStateCount": 1,
+        "headerLabels": [
+          {
+            "text": "Đăng nhập",
+            "aria": null,
+            "title": null
+          },
+          {
+            "text": "Đăng ký",
+            "aria": null,
+            "title": null
+          }
+        ]
+      }
+    }
+  ]
+}

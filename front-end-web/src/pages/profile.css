@@ -1,8 +1,8 @@
 .profile-shell { min-height: 100vh; padding: 48px max(24px, 6vw); background: #f7f8fb; color: #172033; }
 .profile-header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; margin-bottom: 32px; }
-.profile-header h1 { margin: 6px 0; font-size: clamp(2rem, 4vw, 3.5rem); }
+.profile-header h1 { margin: 6px 0; font-size: var(--type-page); }
 .completion-card { min-width: 190px; padding: 20px; border-radius: 16px; background: #172033; color: white; display: grid; gap: 6px; }
-.completion-card strong { font-size: 2rem; color: #95e9bd; }
+.completion-card strong { font-size: var(--type-metric); color: #95e9bd; }
 .completion-card progress { width: 100%; accent-color: #95e9bd; }
 .profile-tabs { display: flex; flex-wrap: wrap; gap: 8px; border-bottom: 1px solid #dfe3eb; }
 .profile-tabs button { border: 0; background: transparent; padding: 14px 16px; color: #697386; cursor: pointer; }
@@ -11,8 +11,10 @@
 .profile-form { max-width: 720px; display: grid; gap: 16px; }
 .profile-form label, .resource-form label { display: grid; gap: 7px; color: #4b5568; font-weight: 600; }
 .profile-form input, .profile-form textarea, .profile-form select, .resource-form input, .resource-form textarea { width: 100%; padding: 12px 14px; border: 1px solid #dfe3eb; border-radius: 10px; font: inherit; box-sizing: border-box; }
+.profile-form :is(input, textarea, select, button):focus-visible, .resource-form :is(input, textarea, select, button):focus-visible, .profile-tabs button:focus-visible { outline: 3px solid rgb(37 99 235 / 25%); outline-offset: 2px; }
+.profile-form :is(input, textarea, select, button):disabled, .resource-form :is(input, textarea, select, button):disabled { cursor: not-allowed; opacity: .55; }
 .profile-form textarea, .resource-form textarea { min-height: 130px; resize: vertical; }
-.profile-submit { width: fit-content; padding: 11px 18px; border: 0; border-radius: 10px; background: #172033; color: white; cursor: pointer; }
+.profile-submit { width: fit-content; padding: 11px 18px; border: 0; border-radius: 10px; background: #172033; color: white; cursor: pointer; font-size: var(--type-button); }
 .profile-message { margin-bottom: 18px; padding: 12px 16px; border-radius: 10px; }
 .profile-message.success { background: #e5f8ee; color: #167044; }.profile-message.error, .field-error { color: #b42318; }
 .resource-item { display: flex; align-items: center; gap: 16px; padding: 15px 0; border-bottom: 1px solid #edf0f5; }
@@ -23,7 +25,7 @@
 .resource-form-actions .secondary-button, .resource-form-actions .profile-submit { min-height: 44px; }
 .resource-form { max-width: 620px; display: grid; gap: 14px; margin-top: 24px; }
 .skill-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }.skill-list label { color: #4b5568; }
-.switch-row { display: flex !important; align-items: center; gap: 10px; }.upload-box { display: block; padding: 24px; border: 2px dashed #cbd3df; border-radius: 14px; margin-bottom: 20px; cursor: pointer; }.upload-box input { display: block; margin-top: 10px; }
+.switch-row { display: flex !important; align-items: center; gap: 10px; }.upload-box { display: grid; gap: 12px; min-width: 0; padding: 24px; border: 2px dashed #cbd3df; border-radius: 14px; margin-bottom: 20px; cursor: pointer; }.upload-box input[type="file"] { position: absolute; width: 1px; height: 1px; padding: 0; opacity: 0; overflow: hidden; clip-path: inset(50%); }.upload-box:focus-within { outline: 2px solid #2563eb; outline-offset: 2px; }.upload-action { display: inline-block; width: fit-content; padding: 10px 14px; border-radius: 8px; background: #e8eefc; color: #1d4ed8; font-weight: 700; }
 .completion-card small { color: #cbd3df; }
 .profile-completeness-card, .job-search-card { display: grid; gap: 16px; padding: 22px; margin-bottom: 24px; border: 1px solid #dfe3eb; border-radius: 16px; background: white; }
 .profile-completeness-card h2, .job-search-card h2 { margin: 0; font-size: 1.15rem; }
